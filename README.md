@@ -135,8 +135,8 @@ Phase 2 will require additional API keys:
 # Google Places API (for location enrichment)
 export GOOGLE_MAPS_API_KEY=your_key_here
 
-# Anthropic API (for friend name extraction from event summaries)
-export ANTHROPIC_API_KEY=your_key_here
+# OpenAI API (for friend/activity extraction from event summaries)
+export OPENAI_API_KEY=your_key_here
 ```
 
 See `planning/` for detailed specs.

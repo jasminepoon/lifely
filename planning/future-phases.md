@@ -34,9 +34,9 @@ Enrich events with place data from Google Maps/Places API to answer:
   - Set budget alerts to avoid surprises
 
 - [ ] **Configure LLM API Key**
-  - Get API key from [Anthropic Console](https://console.anthropic.com/)
-  - Store as `ANTHROPIC_API_KEY` environment variable
-  - Used for: extracting friend names from event summaries
+  - Get API key from [OpenAI Platform](https://platform.openai.com/)
+  - Store as `OPENAI_API_KEY` environment variable
+  - Used for: classifying events, extracting friend names, categorizing activities
 
 ### New Modules
 
@@ -245,37 +245,58 @@ def collect_candidate_social_events(
     return candidates
 ```
 
-#### Step 2.8: LLM Friend Name Extraction (Mandatory)
+#### Step 2.8: LLM Event Classification (Mandatory)
 
-Use Claude to extract friend names from event summaries:
+Use OpenAI to classify events AND extract relevant data in one call:
 
 ```python
 # In llm_enrich.py
-def extract_friends_with_llm(
-    candidates: list[CandidateSocialEvent],
-    client: Anthropic,
-) -> list[tuple[CandidateSocialEvent, list[str]]]:
-    """Extract friend names from event summaries using LLM."""
+def classify_events_with_llm(
+    events: list[SoloEvent],
+    client: OpenAI,
+) -> list[ClassifiedEvent]:
+    """Classify solo events as social, activity, or other."""
 
     # Batch events (50 per request for efficiency)
-    prompt = f"""Extract person names from these calendar events.
+    prompt = f"""Classify each calendar event into one of three categories:
 
+1. SOCIAL - spending time with specific people
+   → Extract: names (list of person names mentioned)
+
+2. ACTIVITY - personal activity (fitness, wellness, health, etc.)
+   → Extract: category (fitness/wellness/health/personal_care/learning/entertainment)
+   → Extract: activity_type (yoga, gym, haircut, therapy, etc.)
+
+3. OTHER - not classifiable (reminders, tasks, work, etc.)
+   → Skip
+
+Events:
 {chr(10).join(f'- "{e.summary}"' for e in batch)}
 
-Return JSON: [{{"summary": "...", "names": ["Name"] or null}}]
+Return JSON array:
+[
+  {{"summary": "Yoga @ Vital", "type": "ACTIVITY", "category": "fitness", "activity_type": "yoga"}},
+  {{"summary": "Dinner with Masha", "type": "SOCIAL", "names": ["Masha"]}},
+  {{"summary": "Pay rent", "type": "OTHER"}}
+]"""
 
-Only extract actual person names, not:
-- Generic terms (team, family, group)
-- Places or activities
-- The calendar owner themselves"""
-
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1024,
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        response_format={"type": "json_object"},
         messages=[{"role": "user", "content": prompt}]
     )
-    # Parse response and return (event, names) pairs
+    # Parse response and return classified events
 ```
+
+**Activity Categories:**
+| Category | Examples |
+|----------|----------|
+| `fitness` | gym, yoga, climbing, running, pilates, crossfit |
+| `wellness` | spa, massage, meditation, acupuncture |
+| `health` | doctor, dentist, therapy, optometrist |
+| `personal_care` | haircut, nails, facial, esthetician |
+| `learning` | class, workshop, lesson, course |
+| `entertainment` | movie, concert, show, museum (solo) |
 
 #### Step 2.9: Name Deduplication & Aggregation
 
@@ -332,7 +353,41 @@ def suggest_merges(
     return suggestions
 ```
 
-#### Step 2.11: Updated Pipeline Flow
+#### Step 2.11: Activity Aggregation
+
+Aggregate activity events by category:
+
+```python
+def aggregate_activity_stats(
+    activity_events: list[ActivityEvent]
+) -> dict[str, ActivityCategoryStats]:
+    """Aggregate activities by category."""
+    by_category: dict[str, dict] = defaultdict(
+        lambda: {"events": [], "total_hours": 0.0, "venues": Counter(), "types": Counter()}
+    )
+
+    for event in activity_events:
+        cat = event.category
+        by_category[cat]["events"].append(event)
+        by_category[cat]["total_hours"] += event.hours
+        if event.venue_name:
+            by_category[cat]["venues"][event.venue_name] += 1
+        if event.activity_type:
+            by_category[cat]["types"][event.activity_type] += 1
+
+    return {
+        cat: ActivityCategoryStats(
+            category=cat,
+            event_count=len(data["events"]),
+            total_hours=round(data["total_hours"], 1),
+            top_venues=data["venues"].most_common(5),
+            top_activities=data["types"].most_common(5),
+        )
+        for cat, data in by_category.items()
+    }
+```
+
+#### Step 2.12: Updated Pipeline Flow
 
 ```
 ┌──────────────┐     ┌─────────────┐     ┌──────────────┐
@@ -341,23 +396,48 @@ def suggest_merges(
 └──────────────┘     └─────────────┘     └──────────────┘
                             │
                             ▼
-                     ┌─────────────┐     ┌──────────────┐
-                     │ Collect     │ ──▶ │ LLM Extract  │
-                     │ Candidates  │     │ Names        │
-                     └─────────────┘     └──────────────┘
-                                               │
-                                               ▼
-                     ┌─────────────┐     ┌──────────────┐
-                     │ Deduplicate │ ──▶ │ Suggest      │
-                     │ & Aggregate │     │ Merges       │
-                     └─────────────┘     └──────────────┘
-                                               │
-                                               ▼
+                     ┌─────────────┐     ┌──────────────────────┐
+                     │ Collect     │ ──▶ │ LLM Classify         │
+                     │ Solo Events │     │ (SOCIAL/ACTIVITY/    │
+                     └─────────────┘     │  OTHER)              │
+                                         └──────────┬───────────┘
+                                                    │
+                              ┌─────────────────────┼─────────────────────┐
+                              │                     │                     │
+                              ▼                     ▼                     ▼
+                     ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+                     │ SOCIAL       │      │ ACTIVITY     │      │ OTHER        │
+                     │ → Extract    │      │ → Categorize │      │ → Skip       │
+                     │   names      │      │   type       │      │              │
+                     └──────┬───────┘      └──────┬───────┘      └──────────────┘
+                            │                     │
+                            ▼                     ▼
+                     ┌──────────────┐      ┌──────────────┐
+                     │ Deduplicate  │      │ Aggregate    │
+                     │ & Aggregate  │      │ by Category  │
+                     └──────┬───────┘      └──────┬───────┘
+                            │                     │
+                            ▼                     ▼
+                     ┌──────────────┐      ┌──────────────┐
+                     │ Inferred     │      │ Activity     │
+                     │ Friends      │      │ Stats        │
+                     └──────┬───────┘      └──────┬───────┘
+                            │                     │
+                            ▼                     │
+                     ┌──────────────┐             │
+                     │ Merge        │             │
+                     │ Suggestions  │             │
+                     └──────┬───────┘             │
+                            │                     │
+                            └──────────┬──────────┘
+                                       │
+                                       ▼
                      ┌─────────────────────────────────┐
                      │ Final Output:                   │
                      │ - friend_stats (email-based)    │
                      │ - inferred_friends (LLM-based)  │
                      │ - merge_suggestions             │
+                     │ - activity_stats (by category)  │
                      │ - location enrichments          │
                      └─────────────────────────────────┘
 ```
@@ -367,14 +447,37 @@ def suggest_merges(
 Add to `models.py`:
 
 ```python
+# ═══════════════════════════════════════════════════════════
+# SOLO EVENT CLASSIFICATION
+# ═══════════════════════════════════════════════════════════
+
 @dataclass
-class CandidateSocialEvent:
-    """Solo event that might mention a friend (for LLM extraction)."""
+class SoloEvent:
+    """A solo event (no attendees) to be classified by LLM."""
     id: str
     summary: str
     date: str
     hours: float
     location_raw: str | None
+
+@dataclass
+class ClassifiedEvent:
+    """Result of LLM classification."""
+    id: str
+    summary: str
+    date: str
+    hours: float
+    location_raw: str | None
+    event_type: str              # "SOCIAL", "ACTIVITY", "OTHER"
+    # For SOCIAL:
+    names: list[str] | None = None
+    # For ACTIVITY:
+    category: str | None = None  # "fitness", "wellness", etc.
+    activity_type: str | None = None  # "yoga", "gym", etc.
+
+# ═══════════════════════════════════════════════════════════
+# INFERRED FRIENDS (from SOCIAL events)
+# ═══════════════════════════════════════════════════════════
 
 @dataclass
 class InferredFriend:
@@ -393,6 +496,37 @@ class MergeSuggestion:
     suggested_email: str
     confidence: str              # "high", "medium", "low"
     reason: str
+
+# ═══════════════════════════════════════════════════════════
+# ACTIVITY STATS (from ACTIVITY events)
+# ═══════════════════════════════════════════════════════════
+
+@dataclass
+class ActivityEvent:
+    """A personal activity event."""
+    id: str
+    summary: str
+    date: str
+    hours: float
+    location_raw: str | None
+    category: str                # "fitness", "wellness", etc.
+    activity_type: str           # "yoga", "gym", "haircut", etc.
+    # Enriched by Places API:
+    venue_name: str | None = None
+    neighborhood: str | None = None
+
+@dataclass
+class ActivityCategoryStats:
+    """Aggregated stats for an activity category."""
+    category: str
+    event_count: int
+    total_hours: float
+    top_venues: list[tuple[str, int]]     # [("Vital Climbing", 15), ...]
+    top_activities: list[tuple[str, int]] # [("yoga", 20), ("climbing", 10)]
+
+# ═══════════════════════════════════════════════════════════
+# LOCATION STATS
+# ═══════════════════════════════════════════════════════════
 
 @dataclass
 class VenueStats:
@@ -426,6 +560,115 @@ def compute_location_stats(events: list[NormalizedEvent]) -> LocationStats:
     - Cuisine
     """
 ```
+
+### LLM Test Cases
+
+Before implementing, validate the LLM classification with these test cases:
+
+#### Test Input Batch
+```python
+TEST_EVENTS = [
+    # ═══ SOCIAL (should extract names) ═══
+    "Dinner with Masha",
+    "Coffee w/ John",
+    "Masha's birthday party",
+    "Drinks with Mike and Sarah",
+    "1:1 Bob",
+    "Catching up with mom",
+    "Double date - us + Jack & Emily",
+    "Girls night",
+    "Brunch @ Cafe Mogador with Angela",
+
+    # ═══ ACTIVITY (should categorize) ═══
+    "Yoga @ Vital",
+    "Gym",
+    "Climbing at Brooklyn Boulders",
+    "Haircut",
+    "Therapy",
+    "Dentist appointment",
+    "Massage @ Aire",
+    "Pilates class",
+    "Piano lesson",
+    "Movie - Dune 2",
+    "Facial at Silver Mirror",
+    "Meditation",
+    "Run in Prospect Park",
+    "Acupuncture",
+
+    # ═══ OTHER (should skip) ═══
+    "Pay rent",
+    "Cancel Instacart",
+    "Flight to LA",
+    "Pick up dry cleaning",
+    "Call mom",
+    "Submit expense report",
+    "Team standup",
+    "Project deadline",
+    "Reminder: renew passport",
+    "Block: focus time",
+]
+```
+
+#### Expected Output
+```json
+[
+  {"summary": "Dinner with Masha", "type": "SOCIAL", "names": ["Masha"]},
+  {"summary": "Coffee w/ John", "type": "SOCIAL", "names": ["John"]},
+  {"summary": "Masha's birthday party", "type": "SOCIAL", "names": ["Masha"]},
+  {"summary": "Drinks with Mike and Sarah", "type": "SOCIAL", "names": ["Mike", "Sarah"]},
+  {"summary": "1:1 Bob", "type": "SOCIAL", "names": ["Bob"]},
+  {"summary": "Catching up with mom", "type": "SOCIAL", "names": ["Mom"]},
+  {"summary": "Double date - us + Jack & Emily", "type": "SOCIAL", "names": ["Jack", "Emily"]},
+  {"summary": "Girls night", "type": "SOCIAL", "names": null},
+  {"summary": "Brunch @ Cafe Mogador with Angela", "type": "SOCIAL", "names": ["Angela"]},
+
+  {"summary": "Yoga @ Vital", "type": "ACTIVITY", "category": "fitness", "activity_type": "yoga"},
+  {"summary": "Gym", "type": "ACTIVITY", "category": "fitness", "activity_type": "gym"},
+  {"summary": "Climbing at Brooklyn Boulders", "type": "ACTIVITY", "category": "fitness", "activity_type": "climbing"},
+  {"summary": "Haircut", "type": "ACTIVITY", "category": "personal_care", "activity_type": "haircut"},
+  {"summary": "Therapy", "type": "ACTIVITY", "category": "health", "activity_type": "therapy"},
+  {"summary": "Dentist appointment", "type": "ACTIVITY", "category": "health", "activity_type": "dentist"},
+  {"summary": "Massage @ Aire", "type": "ACTIVITY", "category": "wellness", "activity_type": "massage"},
+  {"summary": "Pilates class", "type": "ACTIVITY", "category": "fitness", "activity_type": "pilates"},
+  {"summary": "Piano lesson", "type": "ACTIVITY", "category": "learning", "activity_type": "piano lesson"},
+  {"summary": "Movie - Dune 2", "type": "ACTIVITY", "category": "entertainment", "activity_type": "movie"},
+  {"summary": "Facial at Silver Mirror", "type": "ACTIVITY", "category": "personal_care", "activity_type": "facial"},
+  {"summary": "Meditation", "type": "ACTIVITY", "category": "wellness", "activity_type": "meditation"},
+  {"summary": "Run in Prospect Park", "type": "ACTIVITY", "category": "fitness", "activity_type": "running"},
+  {"summary": "Acupuncture", "type": "ACTIVITY", "category": "wellness", "activity_type": "acupuncture"},
+
+  {"summary": "Pay rent", "type": "OTHER"},
+  {"summary": "Cancel Instacart", "type": "OTHER"},
+  {"summary": "Flight to LA", "type": "OTHER"},
+  {"summary": "Pick up dry cleaning", "type": "OTHER"},
+  {"summary": "Call mom", "type": "OTHER"},
+  {"summary": "Submit expense report", "type": "OTHER"},
+  {"summary": "Team standup", "type": "OTHER"},
+  {"summary": "Project deadline", "type": "OTHER"},
+  {"summary": "Reminder: renew passport", "type": "OTHER"},
+  {"summary": "Block: focus time", "type": "OTHER"}
+]
+```
+
+#### Edge Cases to Watch
+| Input | Expected | Notes |
+|-------|----------|-------|
+| "Girls night" | SOCIAL, names: null | Generic group, no specific names |
+| "Call mom" | OTHER | Phone call, not in-person time |
+| "Flight to LA" | OTHER | Travel logistics, not an activity |
+| "Team standup" | OTHER | Work meeting, not personal |
+| "Coffee" (alone) | ACTIVITY or OTHER? | Ambiguous - could be solo coffee break |
+| "Lunch" (alone) | OTHER | Probably just blocking time |
+| "Movie - Dune 2" | ACTIVITY (solo) or SOCIAL? | Depends on context, default to ACTIVITY |
+
+#### Validation Checklist
+- [ ] Run test batch through OpenAI API
+- [ ] Compare output to expected
+- [ ] Document any misclassifications
+- [ ] Adjust prompt if needed
+- [ ] Re-test until accuracy > 90%
+
+---
 
 ### Resolved Questions for Phase 2
 

@@ -65,10 +65,10 @@
                                           │
                                           ▼
                                  ┌─────────────────┐
-                                 │    Anthropic    │
+                                 │     OpenAI      │
                                  │  ┌───────────┐  │
-                                 │  │  Claude   │  │
-                                 │  │  API      │  │
+                                 │  │ GPT-4o    │  │
+                                 │  │ mini      │  │
                                  │  └───────────┘  │
                                  └─────────────────┘
 ```
@@ -139,7 +139,7 @@
 |--------|------|----------------|-------|--------|
 | **Locations** | `locations.py` | Parse Maps URLs, extract place IDs | Location strings | Place IDs, coordinates |
 | **Places Client** | `places_client.py` | Google Places API wrapper, caching | Place IDs | `PlaceDetails` |
-| **LLM Enrich** | `llm_enrich.py` | Extract friend names via Claude | Event summaries | `(event, names)` pairs |
+| **LLM Enrich** | `llm_enrich.py` | Classify events via GPT-4o-mini (SOCIAL/ACTIVITY/OTHER) | Event summaries | `ClassifiedEvent` list |
 | **Dedup** | `dedup.py` | Name normalization, merge suggestions | Extracted names | `InferredFriend`, `MergeSuggestion` |
 
 ---
@@ -210,6 +210,31 @@
  └─────────────────┘
 
 
+ ACTIVITY ANALYSIS (LLM)
+ ═══════════════════════
+
+ ┌─────────────────┐                        ┌─────────────────────────┐
+ │ ActivityEvent   │                        │ ActivityCategoryStats   │
+ │                 │                        │                         │
+ │ • id            │                        │ • category (fitness,    │
+ │ • summary       │                        │   wellness, health,     │
+ │ • date          │──── aggregate ────────▶│   personal_care,        │
+ │ • hours         │                        │   learning, entertain)  │
+ │ • category      │                        │ • event_count           │
+ │ • activity_type │                        │ • total_hours           │
+ │ • venue_name    │                        │ • top_venues[]          │
+ │                 │                        │ • top_activities[]      │
+ └─────────────────┘                        └─────────────────────────┘
+
+ Categories:
+ • fitness      - gym, yoga, climbing, running, pilates, cycling
+ • wellness     - massage, spa, meditation, acupuncture
+ • health       - doctor, dentist, therapy, physical therapy
+ • personal_care - haircut, nails, facial, waxing
+ • learning     - class, lesson, workshop, tutoring
+ • entertainment - concert, show, movie, museum, game
+
+
  LOCATION (Phase 2)
  ══════════════════
 
@@ -254,13 +279,14 @@
 └─────────────────┴───────────────────┴───────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           ANTHROPIC                                          │
+│                            OPENAI                                            │
 ├─────────────────┬───────────────────┬───────────────────────────────────────┤
 │ Service         │ Purpose           │ Auth                                  │
 ├─────────────────┼───────────────────┼───────────────────────────────────────┤
-│ Claude API      │ Extract friend    │ API Key (ANTHROPIC_API_KEY)           │
-│ (claude-sonnet) │ names from event  │ ~$3/1M input tokens                   │
-│                 │ summaries         │ Batched: 50 events/request            │
+│ GPT-4o-mini     │ Classify events:  │ API Key (OPENAI_API_KEY)              │
+│                 │ • SOCIAL → names  │ ~$0.15/1M input tokens                │
+│                 │ • ACTIVITY → type │ Batched: 50 events/request            │
+│                 │ • OTHER → skip    │ JSON mode for structured output       │
 └─────────────────┴───────────────────┴───────────────────────────────────────┘
 ```
 
@@ -272,7 +298,7 @@
 
 # Phase 2 requirements
 GOOGLE_MAPS_API_KEY=your_google_api_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
+OPENAI_API_KEY=your_openai_api_key
 ```
 
 ### Python Dependencies
@@ -286,7 +312,7 @@ Phase 1 (Core):
 └── rich                      # CLI formatting
 
 Phase 2 (Enrichment):
-├── anthropic                 # Claude API client
+├── openai                    # GPT-4o-mini API client
 ├── httpx                     # HTTP client for Places API
 └── tenacity                  # Retry logic (optional)
 ```
@@ -427,13 +453,14 @@ STEP 5: COLLECT CANDIDATES (Solo events)         │
                      └──────┬───────┘            │
                             │                    │
                             │                    │
-STEP 6: LLM EXTRACTION       │                    │
-══════════════════════       │                    │
+STEP 6: LLM CLASSIFICATION   │                    │
+══════════════════════════   │                    │
                             ▼                    │
 ┌──────────────┐     ┌──────────────┐            │
-│  Claude      │     │  Extract     │            │
-│  API         │────▶│  Names       │            │
-│              │     │  (batched)   │            │
+│  OpenAI      │     │  Classify:   │            │
+│  GPT-4o-mini │────▶│  SOCIAL/     │            │
+│              │     │  ACTIVITY/   │            │
+│              │     │  OTHER       │            │
 └──────────────┘     └──────┬───────┘            │
                             │                    │
                             │                    │
@@ -559,6 +586,27 @@ STEP 10: OUTPUT
     }
   ],
 
+  "activity_stats": {
+    "fitness": {
+      "category": "fitness",
+      "event_count": 45,
+      "total_hours": 67.5,
+      "top_venues": [["Vital Climbing", 15], ["Equinox", 12]],
+      "top_activities": [["yoga", 20], ["climbing", 15], ["gym", 10]]
+    },
+    "wellness": {
+      "category": "wellness",
+      "event_count": 12,
+      "total_hours": 18.0,
+      "top_venues": [["Aire Ancient Baths", 5]],
+      "top_activities": [["massage", 6], ["meditation", 4]]
+    },
+    "health": {...},
+    "personal_care": {...},
+    "learning": {...},
+    "entertainment": {...}
+  },
+
   "location_stats": {
     "top_venues": [...],
     "top_neighborhoods": [...],
@@ -583,17 +631,18 @@ STEP 10: OUTPUT
  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐    ┌─────────────────┐
  │ • OAuth auth    │      │ • Places API    │      │ • Context tags  │    │ • HTML/CSS      │
  │ • Fetch events  │      │ • URL parsing   │      │ • YearSummary   │    │ • Flighty-style │
- │ • Normalize     │ ───▶ │ • LLM extraction│ ───▶ │ • LLM prompt    │───▶│ • Charts/maps   │
- │ • Email friends │      │ • Deduplication │      │ • Narrative gen │    │ • Shareable     │
- │ • Time stats    │      │ • Merge suggest │      │                 │    │                 │
- │ • JSON output   │      │ • Neighborhoods │      │                 │    │                 │
- │ • CLI display   │      │ • Cuisines      │      │                 │    │                 │
+ │ • Normalize     │ ───▶ │ • LLM classify  │ ───▶ │ • LLM prompt    │───▶│ • Charts/maps   │
+ │ • Email friends │      │ • Friend extract│      │ • Narrative gen │    │ • Shareable     │
+ │ • Time stats    │      │ • Activity stats│      │                 │    │                 │
+ │ • JSON output   │      │ • Deduplication │      │                 │    │                 │
+ │ • CLI display   │      │ • Merge suggest │      │                 │    │                 │
+ │                 │      │ • Neighborhoods │      │                 │    │                 │
  └─────────────────┘      └─────────────────┘      └─────────────────┘    └─────────────────┘
 
  Dependencies:             Dependencies:            Dependencies:          Dependencies:
  • Calendar API           • Phase 1 complete       • Phase 2 complete     • Phase 3 complete
  • OAuth credentials      • Places API key         • All stats computed   • Static HTML gen
-                          • Anthropic API key                             • Tailwind CSS
+                          • OpenAI API key                                • Tailwind CSS
                                                                           • Chart.js
 ```
 
@@ -647,7 +696,7 @@ STEP 10: OUTPUT
 | OAuth expired | Calendar API | Auto-refresh token, re-auth if needed |
 | Rate limited | Places API | Exponential backoff, respect 429 |
 | Invalid location | Places API | Skip, log warning, continue |
-| LLM timeout | Claude API | Retry with backoff, fallback to skip |
+| LLM timeout | OpenAI API | Retry with backoff, fallback to skip |
 | Parse failure | LLM response | Log error, skip event, continue |
 | Network error | Any API | Retry 3x, then fail gracefully |
 

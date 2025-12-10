@@ -316,7 +316,7 @@ def enrich_friend_stats(
 - [ ] Enable Places API (New)
 - [ ] Create Google API Key
 - [ ] Set up billing alerts (~$20 budget for ≈1200 places)
-- [ ] Configure Anthropic API Key (`ANTHROPIC_API_KEY`)
+- [ ] Configure OpenAI API Key (`OPENAI_API_KEY`)
 
 ### Implementation Steps
 
@@ -329,14 +329,16 @@ def enrich_friend_stats(
 - [ ] Step 2.5: Neighborhood mapping (use Google's data for all cities)
 - [ ] Step 2.6: Cuisine detection
 
-**LLM Friend Extraction (Mandatory):**
-- [ ] Step 2.7: Collect candidate social events (solo events with potential friend mentions)
-- [ ] Step 2.8: LLM friend name extraction (Claude API)
-- [ ] Step 2.9: Name deduplication & aggregation
-- [ ] Step 2.10: Merge suggestions (inferred ↔ email friends)
+**LLM Event Classification (Mandatory):**
+- [ ] Step 2.7: Collect solo events (no attendees)
+- [ ] Step 2.8: LLM classification (SOCIAL/ACTIVITY/OTHER) via OpenAI
+- [ ] Step 2.9: Name deduplication & aggregation (for SOCIAL)
+- [ ] Step 2.10: Activity aggregation by category (for ACTIVITY)
+- [ ] Step 2.11: Merge suggestions (inferred ↔ email friends)
 
 **Output:**
-- [ ] Step 2.11: Update CLI and JSON output with all enrichments
+- [ ] Step 2.12: Update CLI and JSON output with all enrichments
+- [ ] Validate LLM output with test cases (see future-phases.md)
 
 ---
 
@@ -396,15 +398,7 @@ def enrich_friend_stats(
       "event_count": 3,
       "total_hours": 6.5,
       "linked_email": null,
-      "events": [
-        {
-          "id": "ghi789",
-          "summary": "Dinner with Masha",
-          "date": "2025-03-20",
-          "hours": 2.5,
-          "location_raw": "Carbone, NYC"
-        }
-      ]
+      "events": [...]
     }
   ],
 
@@ -415,7 +409,38 @@ def enrich_friend_stats(
       "confidence": "high",
       "reason": "'Masha' matches email prefix"
     }
-  ]
+  ],
+
+  "activity_stats": {
+    "fitness": {
+      "category": "fitness",
+      "event_count": 45,
+      "total_hours": 67.5,
+      "top_venues": [["Vital Climbing", 15], ["Equinox", 12]],
+      "top_activities": [["yoga", 20], ["climbing", 15], ["gym", 10]]
+    },
+    "wellness": {
+      "category": "wellness",
+      "event_count": 12,
+      "total_hours": 18.0,
+      "top_venues": [["Aire Ancient Baths", 5]],
+      "top_activities": [["massage", 6], ["meditation", 4]]
+    },
+    "health": {
+      "category": "health",
+      "event_count": 15,
+      "total_hours": 15.0,
+      "top_venues": [],
+      "top_activities": [["therapy", 12], ["dentist", 2], ["doctor", 1]]
+    },
+    "personal_care": {
+      "category": "personal_care",
+      "event_count": 8,
+      "total_hours": 8.0,
+      "top_venues": [["Silver Mirror", 4]],
+      "top_activities": [["haircut", 4], ["facial", 4]]
+    }
+  }
 }
 ```
 
@@ -425,12 +450,12 @@ def enrich_friend_stats(
 
 | File | Change |
 |------|--------|
-| `models.py` | Add `FriendEvent` ✅, `CandidateSocialEvent`, `InferredFriend`, `MergeSuggestion` |
-| `stats.py` | Update `compute_friend_stats()` ✅, add `collect_candidate_social_events()` |
-| `llm_enrich.py` | **NEW**: LLM-based friend name extraction |
+| `models.py` | Add `FriendEvent` ✅, `SoloEvent`, `ClassifiedEvent`, `InferredFriend`, `ActivityEvent`, `ActivityCategoryStats` |
+| `stats.py` | Update `compute_friend_stats()` ✅, add `collect_solo_events()`, `aggregate_activity_stats()` |
+| `llm_enrich.py` | **NEW**: LLM-based event classification (SOCIAL/ACTIVITY/OTHER) |
 | `dedup.py` | **NEW**: Name normalization, aggregation, merge suggestions |
 | `cli.py` | Update output serialization with all new fields |
-| `.env.example` | Add `ANTHROPIC_API_KEY` |
+| `.env.example` | Add `OPENAI_API_KEY` |
 
 ---
 
