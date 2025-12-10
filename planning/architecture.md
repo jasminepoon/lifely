@@ -137,10 +137,10 @@
 
 | Module | File | Responsibility | Input | Output |
 |--------|------|----------------|-------|--------|
-| **Locations** | `locations.py` | Parse Maps URLs, extract place IDs | Location strings | Place IDs, coordinates |
-| **Places Client** | `places_client.py` | Google Places API wrapper, caching | Place IDs | `PlaceDetails` |
-| **LLM Enrich** | `llm_enrich.py` | Classify events via GPT-4o-mini (SOCIAL/ACTIVITY/OTHER) | Event summaries | `ClassifiedEvent` list |
-| **Dedup** | `dedup.py` | Name normalization, merge suggestions | Extracted names | `InferredFriend`, `MergeSuggestion` |
+| **LLM Enrich** | `llm_enrich.py` | Combined enrichment: location extraction + event classification | All events | Locations, classifications, activity data |
+| **Places Client** | `places_client.py` | Resolve opaque URLs only (goo.gl, maps.app.goo.gl) | Opaque URLs | Venue name, address |
+
+> **Note**: LLM handles ~90% of location extraction. Places API is only called for opaque URLs.
 
 ---
 
@@ -351,10 +351,8 @@ lifely/
 │   ├── cli.py                  # CLI entrypoint
 │   │
 │   │  # ══════ PHASE 2 (Current) ══════
-│   ├── locations.py            # Maps URL parsing
-│   ├── places_client.py        # Places API wrapper
-│   ├── llm_enrich.py           # LLM friend extraction
-│   └── dedup.py                # Name deduplication
+│   ├── llm_enrich.py           # LLM enrichment (classification + locations)
+│   └── places_client.py        # Places API (opaque URLs only)
 │
 ├── tests/                      # Test files
 ├── pyproject.toml              # Project config
@@ -435,82 +433,55 @@ STEP 4: COMPUTE STATS (Email-based)
 └──────────────┘                                 │
                                                  │
                                                  │
-STEP 5: COLLECT CANDIDATES (Solo events)         │
-════════════════════════════════════════         │
-┌──────────────┐     ┌──────────────┐            │
-│ Normalized   │     │  Filter:     │            │
-│ Events       │────▶│  • No attend │            │
-│              │     │  • Has summary│           │
-└──────────────┘     │  • Not "gym" │            │
-                     │    "flight"  │            │
-                     │    etc.      │            │
-                     └──────┬───────┘            │
-                            │                    │
-                            ▼                    │
-                     ┌──────────────┐            │
-                     │ Candidate    │            │
-                     │ Social Events│            │
-                     └──────┬───────┘            │
-                            │                    │
-                            │                    │
-STEP 6: LLM CLASSIFICATION   │                    │
-══════════════════════════   │                    │
-                            ▼                    │
-┌──────────────┐     ┌──────────────┐            │
-│  OpenAI      │     │  Classify:   │            │
-│  GPT-4o-mini │────▶│  SOCIAL/     │            │
-│              │     │  ACTIVITY/   │            │
-│              │     │  OTHER       │            │
-└──────────────┘     └──────┬───────┘            │
-                            │                    │
-                            │                    │
-STEP 7: DEDUPLICATE          │                    │
-═══════════════════          │                    │
-                            ▼                    │
-┌──────────────┐     ┌──────────────┐            │
-│ (event,names)│     │  Normalize:  │            │
-│  pairs       │────▶│  • lowercase │            │
-│              │     │  • aggregate │            │
-└──────────────┘     └──────┬───────┘            │
-                            │                    │
-                            ▼                    │
-                     ┌──────────────┐            │
-                     │ Inferred     │            │
-                     │ Friends      │            │
-                     └──────┬───────┘            │
-                            │                    │
-                            │                    │
-STEP 8: MERGE SUGGESTIONS    │                    │
-═════════════════════════    │                    │
-                            ▼                    │
-┌──────────────┐     ┌──────────────┐            │
-│ Inferred     │     │  Match:      │            │
-│ Friends      │────▶│  • name in   │◄───────────┘
-│              │     │    email     │
-└──────────────┘     │  • display   │
-                     │    name      │
-                     └──────┬───────┘
+STEP 5: LLM ENRICHMENT (Single Batch Call)
+══════════════════════════════════════════
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Input: ALL events (with has_attendees flag)                             │
+│                                                                          │
+│  ┌──────────────┐                                                        │
+│  │   OpenAI     │     Extracts from each event:                          │
+│  │  GPT-4o-mini │───▶ • Location: venue_name, neighborhood, city, cuisine│
+│  │              │     • Classification: SOCIAL/ACTIVITY/OTHER (solo only)│
+│  │  (~$0.05)    │     • Names (if SOCIAL), category/type (if ACTIVITY)   │
+│  └──────────────┘     • Flag: is_opaque_url (for Places API)             │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
                             │
-                            ▼
-                     ┌──────────────┐
-                     │ Merge        │
-                     │ Suggestions  │
-                     └──────────────┘
-
-
-STEP 9: LOCATION ENRICHMENT
-═══════════════════════════
+                            │
+STEP 6: RESOLVE OPAQUE URLs (Conditional)
+═════════════════════════════════════════
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│ FriendStats  │     │  For each    │     │ Enriched     │
-│ + Inferred   │────▶│  location:   │────▶│ Stats        │
-│              │     │  • Parse URL │     │              │
-└──────────────┘     │  • Places API│     └──────────────┘
-                     │  • Cache hit?│
-                     └──────────────┘
+│ Events where │     │  Follow      │     │  Places API  │
+│ is_opaque_url│────▶│  redirects   │────▶│  (if needed) │
+│ = true       │     │  (httpx)     │     │  (cached)    │
+└──────────────┘     └──────────────┘     └──────────────┘
+       │
+       │ ~5-10% of events with locations
+       │ Most opaque URLs resolve via redirect alone
+       ▼
+
+STEP 7: APPLY ENRICHMENTS & AGGREGATE
+═════════════════════════════════════
+              ┌─────────────────────────────────────────────────────────┐
+              │  Apply LLM results to data structures:                   │
+              │                                                          │
+              │  • FriendStats.events → venue_name, neighborhood, etc.  │
+              │  • SOCIAL events → aggregate into InferredFriends        │
+              │  • ACTIVITY events → aggregate into ActivityCategoryStats│
+              └─────────────────────────────────────────────────────────┘
+                            │
+                            │
+STEP 8: MERGE SUGGESTIONS
+═════════════════════════
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│ Inferred     │     │  Match:      │     │ Merge        │
+│ Friends      │────▶│  • name in   │────▶│ Suggestions  │
+│              │     │    email     │     │              │
+└──────────────┘     └──────────────┘     └──────────────┘
 
 
-STEP 10: OUTPUT
-═══════════════
+STEP 9: OUTPUT
+══════════════
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │ All Stats    │     │  Serialize   │     │ stats_2025   │
 │              │────▶│  to JSON     │────▶│ .json        │
@@ -662,12 +633,12 @@ STEP 10: OUTPUT
  TTL: Manual refresh (--no-cache flag)
  Size: ~1-5 MB typical
 
- LAYER 2: Places API Responses
- ═════════════════════════════
+ LAYER 2: Places API Responses (Opaque URLs Only)
+ ════════════════════════════════════════════════
  File: data/places_cache.json
- Key: place_id OR normalized location string
+ Key: opaque URL → resolved venue data
  TTL: Indefinite (place details rarely change)
- Size: ~100-500 KB typical
+ Size: ~10-50 KB typical (only opaque URLs cached)
 
  LAYER 3: LLM Extractions
  ════════════════════════
@@ -720,7 +691,16 @@ STEP 10: OUTPUT
 |-----------|--------|-------|
 | Full year fetch | < 30s | Cached after first run |
 | Stats computation | < 5s | In-memory processing |
-| LLM extraction | < 60s | Batched, 50 events/request |
-| Places enrichment | < 120s | Cached after first run |
+| LLM enrichment | < 30s | Single batch call |
+| Opaque URL resolution | < 30s | Only ~30 URLs, cached |
 | Total (cached) | < 10s | Most data from disk |
-| Total (fresh) | < 5min | First run with all APIs |
+| Total (fresh) | < 2min | First run with all APIs |
+
+## Cost Targets
+
+| Component | Cost | Notes |
+|-----------|------|-------|
+| OpenAI LLM | ~$0.05 | Every run |
+| Places API | ~$0.50 | First run only, opaque URLs |
+| **Total (first run)** | ~$0.55 | |
+| **Total (subsequent)** | ~$0.05 | Places cached |

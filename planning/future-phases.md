@@ -16,37 +16,77 @@ Enrich events with place data from Google Maps/Places API to answer:
 
 ### Pre-requisites Checklist
 
+#### OpenAI API Setup (Required)
+
+- [ ] **Create OpenAI Account**
+  - Go to [platform.openai.com](https://platform.openai.com/)
+  - Sign up or log in
+
+- [ ] **Add Payment Method**
+  - Navigate to Settings → Billing
+  - Add credit card (pay-as-you-go)
+  - Estimated cost: ~$0.05 per run
+
+- [ ] **Create API Key**
+  - Go to API Keys section
+  - Click "Create new secret key"
+  - Name it "Lifely" or similar
+  - Copy the key immediately (shown only once)
+
+- [ ] **Configure Environment Variable**
+  ```bash
+  # Add to your shell profile (~/.zshrc or ~/.bashrc)
+  export OPENAI_API_KEY="sk-..."
+
+  # Or create .env file in project root
+  echo "OPENAI_API_KEY=sk-..." >> .env
+  ```
+
+- [ ] **Verify Setup**
+  ```bash
+  curl https://api.openai.com/v1/models \
+    -H "Authorization: Bearer $OPENAI_API_KEY" | head -20
+  ```
+
+#### Google Places API Setup (Optional - for opaque URLs only)
+
+> **Note**: Places API is only needed for resolving opaque Maps URLs like `goo.gl/maps/...`.
+> If all your calendar locations have readable addresses, you can skip this.
+
 - [ ] **Enable Places API (New)**
-  - Go to Google Cloud Console → APIs & Services → Library
-  - Search "Places API (New)" and enable it
-  - Note: This is the newer version with better pricing and fields
+  - Go to [Google Cloud Console](https://console.cloud.google.com/)
+  - Select your Lifely project (created in Phase 1)
+  - APIs & Services → Library → Search "Places API (New)"
+  - Click "Enable"
 
-- [ ] **Enable Geocoding API** (optional, for lat/lng → address)
-  - Same process as above
-
-- [ ] **Create Google API Key**
+- [ ] **Create API Key** (if you don't have one)
   - APIs & Services → Credentials → Create Credentials → API Key
-  - Restrict to Places API and Geocoding API
-  - Store as `GOOGLE_MAPS_API_KEY` environment variable
+  - Click "Edit API key" to restrict it:
+    - Application restrictions: None (or IP if you have static IP)
+    - API restrictions: Restrict to "Places API (New)"
+  - Copy the key
 
-- [ ] **Set up billing alerts**
-  - Places API is pay-per-use (~$17/1000 Place Details calls)
-  - Set budget alerts to avoid surprises
+- [ ] **Configure Environment Variable**
+  ```bash
+  export GOOGLE_MAPS_API_KEY="AIza..."
+  ```
 
-- [ ] **Configure LLM API Key**
-  - Get API key from [OpenAI Platform](https://platform.openai.com/)
-  - Store as `OPENAI_API_KEY` environment variable
-  - Used for: classifying events, extracting friend names, categorizing activities
+- [ ] **Set Budget Alert** (recommended)
+  - Go to Billing → Budgets & alerts
+  - Create budget: $5/month (generous for ~300 API calls)
+  - Places API cost: ~$0.017 per call
+  - Expected usage: ~30 calls per run (opaque URLs only)
 
 ### New Modules
 
 ```
 src/lifely/
-├── locations.py          # URL parsing, place resolution
-├── places_client.py      # Google Places API wrapper with caching
-├── llm_enrich.py         # LLM-based friend name extraction
-└── dedup.py              # Name normalization and merge suggestions
+├── llm_enrich.py         # LLM enrichment (classification + location extraction)
+└── places_client.py      # Google Places API (only for opaque URLs)
 ```
+
+> **Simplified**: Location extraction is handled by the LLM in most cases.
+> Places API is only called for opaque URLs that the LLM can't parse.
 
 ### Implementation Steps
 
@@ -68,266 +108,256 @@ class FriendEvent:
     cuisine: str | None = None
 ```
 
-#### Step 2.1: Google Maps URL Parser
+#### Step 2.1: LLM Enrichment Module (Core)
 
-Events often contain Maps URLs in `location` or `description`:
-
-```
-https://maps.google.com/?cid=12345678901234567890
-https://goo.gl/maps/abc123
-https://www.google.com/maps/place/Restaurant+Name/@40.123,-73.456,17z
-https://maps.app.goo.gl/xyz789
-```
-
-**Parser should extract**:
-- `place_id` (if present in URL params)
-- `cid` (customer ID, can be converted to place_id)
-- Lat/lng coordinates
-- Place name from URL path
-
-**Fallback**: If URL is opaque (short link), we may need to:
-1. Follow redirects to get the full URL
-2. Or use the URL as a text query to Places Text Search
-
-#### Step 2.2: Places API Client
+The LLM handles BOTH event classification AND location extraction in a single batch call:
 
 ```python
-class PlacesClient:
-    def __init__(self, api_key: str, cache_path: Path):
-        self.api_key = api_key
-        self.cache = self._load_cache(cache_path)
+# llm_enrich.py
 
-    def get_place_details(self, place_id: str) -> PlaceDetails | None:
-        """Fetch place details, using cache when available."""
-
-    def text_search(self, query: str, location_bias: tuple[float, float] | None = None) -> PlaceDetails | None:
-        """Search for a place by text query."""
-
-    def resolve_location(self, location_string: str) -> PlaceDetails | None:
-        """
-        Main entry point: try to resolve any location string to place details.
-        1. Check if it's a Maps URL → parse and fetch
-        2. Else use text search
-        """
-```
-
-**Caching strategy**:
-- Cache by `place_id` (stable identifier)
-- Also cache by normalized location string → place_id mapping
-- Persist cache to `data/places_cache.json`
-- This dramatically reduces API calls on re-runs
-
-#### Step 2.3: Place Details Model
-
-```python
-@dataclass
-class PlaceDetails:
-    place_id: str
-    name: str
-    formatted_address: str
-
-    # Structured address
-    neighborhood: str | None
-    city: str | None
-    state: str | None
-    country: str | None
-    postal_code: str | None
-
-    # Coordinates
-    lat: float | None
-    lng: float | None
-
-    # Classification
-    types: list[str]              # e.g., ['restaurant', 'food', 'point_of_interest']
-    primary_type: str | None      # e.g., 'thai_restaurant'
-
-    # Optional enrichments
-    price_level: int | None       # 0-4
-    rating: float | None
-    user_ratings_total: int | None
-```
-
-#### Step 2.4: Enrich Friend Stats
-
-After resolving locations, populate the FriendEvent fields:
-
-```python
-def enrich_friend_stats(
-    stats: list[FriendStats],
-    places_client: PlacesClient,
-) -> list[FriendStats]:
-    """
-    Enrich FriendEvent.location_raw with resolved place details.
-    """
-    for friend in stats:
-        for event in friend.events:
-            if event.location_raw and _is_valid_location(event.location_raw):
-                place = places_client.resolve_location(event.location_raw)
-                if place:
-                    event.venue_name = place.name
-                    event.neighborhood = place.neighborhood
-                    event.cuisine = detect_cuisine(place)
-    return stats
-```
-
-#### Step 2.5: Neighborhood Mapping
-
-**Decision**: Use Google's `neighborhood` or `sublocality` data for all cities.
-
-```python
-def extract_neighborhood(place: PlaceDetails) -> str | None:
-    """
-    Extract neighborhood from Google's address components.
-
-    Priority:
-    1. neighborhood component
-    2. sublocality component
-    3. None if neither available
-    """
-    # Google's addressComponents includes neighborhood for many places
-    # Works reasonably well across all cities
-```
-
-**Future enhancement** (if needed): Add ZIP → neighborhood lookup table for NYC.
-
-#### Step 2.6: Cuisine Detection
-
-For restaurant-type places, extract cuisine:
-
-1. **Primary source**: `primaryType` from Places API
-   - Values like: `thai_restaurant`, `italian_restaurant`, `japanese_restaurant`
-   - Parse the prefix: `thai_restaurant` → "Thai"
-
-2. **Fallback**: Check `types` array for cuisine indicators
-
-3. **Last resort**: Keyword match on place name
-   - "Ugly Baby" doesn't tell us much, but "Thai Villa" does
-
-```python
-CUISINE_PATTERNS = {
-    'thai': ['thai'],
-    'japanese': ['japanese', 'sushi', 'ramen', 'izakaya'],
-    'italian': ['italian', 'pizza', 'pasta', 'trattoria'],
-    'mexican': ['mexican', 'taco', 'taqueria'],
-    'chinese': ['chinese', 'dim sum', 'szechuan', 'cantonese'],
-    # ... etc
-}
-
-def detect_cuisine(place: PlaceDetails) -> str | None:
-    # 1. Check primaryType
-    # 2. Check types array
-    # 3. Keyword match on name
-```
-
-#### Step 2.7: Collect Candidate Social Events
-
-Identify solo events (no attendees) that might mention friends:
-
-```python
-NON_SOCIAL_KEYWORDS = {"flight", "dentist", "doctor", "gym", "haircut",
-                        "reminder", "deadline", "standup", "sync"}
-
-def collect_candidate_social_events(
-    events: list[NormalizedEvent]
-) -> list[CandidateSocialEvent]:
-    """Find solo events that might mention friends."""
-    candidates = []
-    for event in events:
-        # Skip if has attendees (already in friend_stats)
-        if any(not a.is_self for a in event.attendees):
-            continue
-        if not event.summary:
-            continue
-        # Skip obvious non-social events
-        if any(kw in event.summary.lower() for kw in NON_SOCIAL_KEYWORDS):
-            continue
-        candidates.append(CandidateSocialEvent(...))
-    return candidates
-```
-
-#### Step 2.8: LLM Event Classification (Mandatory)
-
-Use OpenAI to classify events AND extract relevant data in one call:
-
-```python
-# In llm_enrich.py
-def classify_events_with_llm(
-    events: list[SoloEvent],
+def enrich_all_events(
+    events: list[NormalizedEvent],
+    friend_stats: list[FriendStats],
     client: OpenAI,
-) -> list[ClassifiedEvent]:
-    """Classify solo events as social, activity, or other."""
+) -> EnrichmentResult:
+    """
+    Single LLM call to:
+    1. Extract location details from ALL events with location_raw
+    2. Classify solo events (SOCIAL/ACTIVITY/OTHER)
+    3. Flag opaque URLs that need Places API resolution
+    """
+    # Prepare batch (dedupe by summary+location for efficiency)
+    batch = _prepare_enrichment_batch(events, friend_stats)
 
-    # Batch events (50 per request for efficiency)
-    prompt = f"""Classify each calendar event into one of three categories:
-
-1. SOCIAL - spending time with specific people
-   → Extract: names (list of person names mentioned)
-
-2. ACTIVITY - personal activity (fitness, wellness, health, etc.)
-   → Extract: category (fitness/wellness/health/personal_care/learning/entertainment)
-   → Extract: activity_type (yoga, gym, haircut, therapy, etc.)
-
-3. OTHER - not classifiable (reminders, tasks, work, etc.)
-   → Skip
-
-Events:
-{chr(10).join(f'- "{e.summary}"' for e in batch)}
-
-Return JSON array:
-[
-  {{"summary": "Yoga @ Vital", "type": "ACTIVITY", "category": "fitness", "activity_type": "yoga"}},
-  {{"summary": "Dinner with Masha", "type": "SOCIAL", "names": ["Masha"]}},
-  {{"summary": "Pay rent", "type": "OTHER"}}
-]"""
-
+    # Call OpenAI
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         response_format={"type": "json_object"},
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{
+            "role": "user",
+            "content": ENRICHMENT_PROMPT.format(events=json.dumps(batch))
+        }]
     )
-    # Parse response and return classified events
+
+    return _parse_enrichment_response(response)
 ```
 
-**Activity Categories:**
-| Category | Examples |
-|----------|----------|
-| `fitness` | gym, yoga, climbing, running, pilates, crossfit |
-| `wellness` | spa, massage, meditation, acupuncture |
-| `health` | doctor, dentist, therapy, optometrist |
-| `personal_care` | haircut, nails, facial, esthetician |
-| `learning` | class, workshop, lesson, course |
-| `entertainment` | movie, concert, show, museum (solo) |
+**What the LLM extracts:**
 
-#### Step 2.9: Name Deduplication & Aggregation
+| Data | Source | Example |
+|------|--------|---------|
+| `venue_name` | location_raw or summary | "Thai Villa" |
+| `neighborhood` | address in location_raw | "Williamsburg" |
+| `city` | address in location_raw | "Brooklyn" |
+| `cuisine` | inferred from venue name | "Thai" |
+| `is_opaque_url` | URL pattern detection | `true` for goo.gl links |
+| `type` | summary analysis (solo events) | "SOCIAL" / "ACTIVITY" / "OTHER" |
+| `names` | summary extraction (SOCIAL) | ["Masha", "John"] |
+| `category` | summary analysis (ACTIVITY) | "fitness" |
+| `activity_type` | summary analysis (ACTIVITY) | "yoga" |
 
-Normalize and aggregate inferred friends:
+**Location scenarios the LLM handles:**
 
 ```python
-# In dedup.py
-def normalize_name(name: str) -> str:
-    """Normalize name for deduplication."""
-    return name.strip().lower()
+# Scenario A: Structured address (LLM extracts all fields)
+location_raw = "Thai Villa, 123 Main St, Williamsburg, Brooklyn, NY"
+→ venue_name: "Thai Villa", neighborhood: "Williamsburg", cuisine: "Thai"
 
+# Scenario B: Venue in summary (LLM infers from context)
+summary = "Yoga @ Vital", location_raw = ""
+→ venue_name: "Vital Climbing", category: "fitness", activity_type: "yoga"
+
+# Scenario C: Full Maps URL (LLM parses venue from URL)
+location_raw = "https://www.google.com/maps/place/Thai+Villa/@40.71,-73.95"
+→ venue_name: "Thai Villa", is_opaque_url: false
+
+# Scenario D: Opaque URL (LLM flags for Places API)
+location_raw = "https://maps.app.goo.gl/xyz789"
+→ is_opaque_url: true (needs Places API resolution)
+```
+
+#### Step 2.2: Places API Client (Opaque URLs Only)
+
+Only called when LLM flags `is_opaque_url: true`:
+
+```python
+# places_client.py
+
+OPAQUE_URL_PATTERNS = [
+    r'https?://goo\.gl/maps/',
+    r'https?://maps\.app\.goo\.gl/',
+]
+
+class PlacesClient:
+    def __init__(self, api_key: str | None, cache_path: Path):
+        self.api_key = api_key
+        self.cache = self._load_cache(cache_path) if cache_path.exists() else {}
+
+    def resolve_opaque_url(self, url: str) -> dict | None:
+        """
+        Resolve an opaque Maps URL to location details.
+
+        1. Follow redirects to get full URL
+        2. Extract place name or coordinates from expanded URL
+        3. If needed, call Places API Text Search
+        """
+        if url in self.cache:
+            return self.cache[url]
+
+        # Follow redirects
+        full_url = self._follow_redirect(url)
+
+        # Try to extract venue from expanded URL
+        venue = self._extract_venue_from_url(full_url)
+        if venue:
+            result = {"venue_name": venue, "source": "url_parse"}
+            self.cache[url] = result
+            return result
+
+        # Fallback: Places API Text Search
+        if self.api_key:
+            result = self._text_search(full_url)
+            if result:
+                self.cache[url] = result
+                return result
+
+        return None
+
+    def _follow_redirect(self, url: str) -> str:
+        """Follow redirects to get the full Maps URL."""
+        import httpx
+        response = httpx.head(url, follow_redirects=True, timeout=10)
+        return str(response.url)
+```
+
+**Cost optimization**: Most opaque URLs expand to full URLs with venue names visible.
+Places API is only called as a last resort (~10% of opaque URLs).
+
+#### Step 2.3: Apply Enrichments
+
+```python
+def apply_enrichments(
+    friend_stats: list[FriendStats],
+    events: list[NormalizedEvent],
+    enrichment_result: EnrichmentResult,
+) -> tuple[list[FriendStats], list[InferredFriend], list[ActivityEvent]]:
+    """
+    Apply LLM enrichments back to data structures.
+    """
+    # Update FriendStats events with location data
+    for friend in friend_stats:
+        for event in friend.events:
+            if event.id in enrichment_result.locations:
+                loc = enrichment_result.locations[event.id]
+                event.venue_name = loc.venue_name
+                event.neighborhood = loc.neighborhood
+                event.cuisine = loc.cuisine
+
+    # Build InferredFriends from SOCIAL classifications
+    inferred = _build_inferred_friends(enrichment_result.social_events)
+
+    # Build ActivityEvents from ACTIVITY classifications
+    activities = _build_activity_events(enrichment_result.activity_events)
+
+    return friend_stats, inferred, activities
+```
+
+#### Step 2.4: Collect Solo Events
+
+Solo events (no attendees) are sent to the LLM for classification:
+
+```python
+def collect_solo_events(events: list[NormalizedEvent]) -> list[SoloEvent]:
+    """Collect events without attendees for LLM classification."""
+    return [
+        SoloEvent(
+            id=e.id,
+            summary=e.summary or "",
+            date=e.start.strftime("%Y-%m-%d"),
+            hours=round(e.duration_minutes / 60, 1),
+            location_raw=e.location_raw,
+        )
+        for e in events
+        if not any(not a.is_self for a in e.attendees)
+        and e.summary  # Skip empty summaries
+    ]
+```
+
+> **Note**: We no longer pre-filter with keywords. The LLM handles classification
+> of ALL solo events into SOCIAL/ACTIVITY/OTHER categories.
+
+#### Step 2.5: LLM Prompt Template
+
+The combined enrichment prompt (used in Step 2.1):
+
+```python
+ENRICHMENT_PROMPT = """Analyze these calendar events and extract structured data.
+
+For EACH event, extract:
+
+1. LOCATION (if location field is present):
+   - venue_name: Business/place name
+   - neighborhood: District/area (e.g., "Williamsburg", "Midtown", "SoHo")
+   - city: City name
+   - cuisine: Food type if restaurant (e.g., "Thai", "Italian", "Japanese")
+   - is_opaque_url: true ONLY if location is a short URL like goo.gl or maps.app.goo.gl
+
+2. CLASSIFICATION (only for events where has_attendees is false):
+   - type: "SOCIAL" (meeting people), "ACTIVITY" (personal activity), "OTHER" (skip)
+   - For SOCIAL: names (list of person names)
+   - For ACTIVITY: category and activity_type
+
+Activity Categories:
+- fitness: gym, yoga, climbing, running, pilates, cycling
+- wellness: spa, massage, meditation, acupuncture
+- health: doctor, dentist, therapy, physical therapy
+- personal_care: haircut, nails, facial, waxing
+- learning: class, workshop, lesson, course
+- entertainment: movie, concert, show, museum
+
+Events:
+{events}
+
+Return JSON: {{"results": [...]}}
+"""
+```
+
+#### Step 2.6: Name Deduplication & Aggregation
+
+Normalize and aggregate inferred friends (handled in `llm_enrich.py`):
+
+```python
 def aggregate_inferred_friends(
-    events_with_names: list[tuple[CandidateSocialEvent, list[str]]]
+    social_events: list[ClassifiedEvent]
 ) -> list[InferredFriend]:
     """Aggregate LLM-extracted names into deduplicated friends."""
     by_name: dict[str, dict] = defaultdict(
         lambda: {"display_name": None, "events": [], "total_hours": 0.0}
     )
 
-    for event, names in events_with_names:
-        for name in names:
-            key = normalize_name(name)
+    for event in social_events:
+        if not event.names:
+            continue
+        for name in event.names:
+            key = name.strip().lower()
             by_name[key]["total_hours"] += event.hours
             by_name[key]["events"].append(event)
             if by_name[key]["display_name"] is None:
                 by_name[key]["display_name"] = name
 
-    return [InferredFriend(...) for key, data in by_name.items()]
+    return [
+        InferredFriend(
+            name=data["display_name"],
+            normalized_name=key,
+            event_count=len(data["events"]),
+            total_hours=round(data["total_hours"], 1),
+            events=[...],  # Convert to FriendEvent
+        )
+        for key, data in by_name.items()
+    ]
 ```
 
-#### Step 2.10: Merge Suggestions (Inferred ↔ Email Friends)
+#### Step 2.7: Merge Suggestions (Inferred ↔ Email Friends)
 
 Suggest links between inferred names and email-based friends:
 
@@ -353,7 +383,7 @@ def suggest_merges(
     return suggestions
 ```
 
-#### Step 2.11: Activity Aggregation
+#### Step 2.8: Activity Aggregation
 
 Aggregate activity events by category:
 
@@ -387,60 +417,88 @@ def aggregate_activity_stats(
     }
 ```
 
-#### Step 2.12: Updated Pipeline Flow
+#### Step 2.9: Updated Pipeline Flow
 
 ```
-┌──────────────┐     ┌─────────────┐     ┌──────────────┐
-│ Fetch Events │ ──▶ │ Normalize   │ ──▶ │ Email-based  │
-│              │     │             │     │ friend_stats │
-└──────────────┘     └─────────────┘     └──────────────┘
-                            │
-                            ▼
-                     ┌─────────────┐     ┌──────────────────────┐
-                     │ Collect     │ ──▶ │ LLM Classify         │
-                     │ Solo Events │     │ (SOCIAL/ACTIVITY/    │
-                     └─────────────┘     │  OTHER)              │
-                                         └──────────┬───────────┘
-                                                    │
-                              ┌─────────────────────┼─────────────────────┐
-                              │                     │                     │
-                              ▼                     ▼                     ▼
-                     ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
-                     │ SOCIAL       │      │ ACTIVITY     │      │ OTHER        │
-                     │ → Extract    │      │ → Categorize │      │ → Skip       │
-                     │   names      │      │   type       │      │              │
-                     └──────┬───────┘      └──────┬───────┘      └──────────────┘
-                            │                     │
-                            ▼                     ▼
-                     ┌──────────────┐      ┌──────────────┐
-                     │ Deduplicate  │      │ Aggregate    │
-                     │ & Aggregate  │      │ by Category  │
-                     └──────┬───────┘      └──────┬───────┘
-                            │                     │
-                            ▼                     ▼
-                     ┌──────────────┐      ┌──────────────┐
-                     │ Inferred     │      │ Activity     │
-                     │ Friends      │      │ Stats        │
-                     └──────┬───────┘      └──────┬───────┘
-                            │                     │
-                            ▼                     │
-                     ┌──────────────┐             │
-                     │ Merge        │             │
-                     │ Suggestions  │             │
-                     └──────┬───────┘             │
-                            │                     │
-                            └──────────┬──────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      PHASE 2 PIPELINE (Hybrid LLM-First)                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+STEPS 1-4: Same as Phase 1
+─────────────────────────
+┌──────────────┐     ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+│ Fetch Events │ ──▶ │ Normalize   │ ──▶ │ Email-based  │ ──▶ │ Time Stats   │
+│              │     │             │     │ friend_stats │     │              │
+└──────────────┘     └─────────────┘     └──────────────┘     └──────────────┘
+
+
+STEP 5: LLM ENRICHMENT (Single Batch Call)
+──────────────────────────────────────────
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  Input: ALL events (with has_attendees flag)                                 │
+│                                                                              │
+│  ┌──────────────┐                                                            │
+│  │   OpenAI     │     Extracts:                                              │
+│  │  GPT-4o-mini │───▶ • Location: venue_name, neighborhood, city, cuisine   │
+│  │              │     • Classification: type, names, category, activity_type │
+│  │  (~$0.05)    │     • Flags: is_opaque_url (for Places API)               │
+│  └──────────────┘                                                            │
+└──────────────────────────────────────────────────────────────────────────────┘
                                        │
                                        ▼
-                     ┌─────────────────────────────────┐
-                     │ Final Output:                   │
-                     │ - friend_stats (email-based)    │
-                     │ - inferred_friends (LLM-based)  │
-                     │ - merge_suggestions             │
-                     │ - activity_stats (by category)  │
-                     │ - location enrichments          │
-                     └─────────────────────────────────┘
+STEP 6: RESOLVE OPAQUE URLs (Conditional)
+─────────────────────────────────────────
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│ Events where │     │  Follow      │     │ Places API   │
+│ is_opaque_url│────▶│  redirects   │────▶│ (if needed)  │
+│ = true       │     │  (httpx)     │     │ (~$0.50)     │
+└──────────────┘     └──────────────┘     └──────────────┘
+       │
+       │ ~5-10% of events with locations
+       ▼
+
+STEP 7: APPLY ENRICHMENTS & AGGREGATE
+─────────────────────────────────────
+                              ┌─────────────────────┐
+                              │ Enrichment Results  │
+                              └──────────┬──────────┘
+                                         │
+              ┌──────────────────────────┼──────────────────────────┐
+              │                          │                          │
+              ▼                          ▼                          ▼
+     ┌──────────────┐           ┌──────────────┐           ┌──────────────┐
+     │ Update       │           │ SOCIAL →     │           │ ACTIVITY →   │
+     │ FriendStats  │           │ Inferred     │           │ Activity     │
+     │ locations    │           │ Friends      │           │ Stats        │
+     └──────────────┘           └──────┬───────┘           └──────────────┘
+                                       │
+                                       ▼
+                               ┌──────────────┐
+                               │ Merge        │
+                               │ Suggestions  │
+                               └──────────────┘
+
+
+STEP 8: OUTPUT
+──────────────
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  stats_2025.json                                                            │
+│  ├── time_stats                                                             │
+│  ├── friend_stats (email-based, with enriched locations)                    │
+│  ├── inferred_friends (LLM-extracted from solo events)                      │
+│  ├── activity_stats (fitness, wellness, health, etc.)                       │
+│  ├── merge_suggestions (inferred ↔ email friends)                           │
+│  └── location_stats (if Places API used)                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**Cost Summary:**
+| Component | Cost | When |
+|-----------|------|------|
+| OpenAI LLM | ~$0.05 | Every run |
+| Places API | ~$0.50 | Only for opaque URLs, cached |
+| **Total first run** | ~$0.55 | |
+| **Subsequent runs** | ~$0.05 | Places cached |
 
 ### Updated Stats (Phase 2)
 

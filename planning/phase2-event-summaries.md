@@ -313,31 +313,44 @@ def enrich_friend_stats(
 ## Updated Phase 2 Checklist
 
 ### Prerequisites
-- [ ] Enable Places API (New)
-- [ ] Create Google API Key
-- [ ] Set up billing alerts (~$20 budget for ≈1200 places)
-- [ ] Configure OpenAI API Key (`OPENAI_API_KEY`)
+
+**OpenAI API (Required):**
+- [ ] Create OpenAI account at [platform.openai.com](https://platform.openai.com/)
+- [ ] Add payment method (Settings → Billing)
+- [ ] Create API key (API Keys → Create new secret key)
+- [ ] Configure: `export OPENAI_API_KEY="sk-..."`
+- [ ] Verify: `curl https://api.openai.com/v1/models -H "Authorization: Bearer $OPENAI_API_KEY"`
+
+**Google Places API (Optional - for opaque URLs only):**
+- [ ] Enable Places API (New) in Google Cloud Console
+- [ ] Create/reuse API key (restrict to Places API)
+- [ ] Configure: `export GOOGLE_MAPS_API_KEY="AIza..."`
+- [ ] Set budget alert: $5/month
 
 ### Implementation Steps
 
-**Location Enrichment:**
+**Core (LLM-First Approach):**
 - [x] **Step 2.0**: Add FriendEvent model, update FriendStats ✅
-- [ ] Step 2.1: Google Maps URL Parser (with redirect following for short URLs)
-- [ ] Step 2.2: Places API Client with caching
-- [ ] Step 2.3: PlaceDetails model
-- [ ] Step 2.4: `enrich_friend_stats()` for locations
-- [ ] Step 2.5: Neighborhood mapping (use Google's data for all cities)
-- [ ] Step 2.6: Cuisine detection
+- [ ] **Step 2.1**: LLM Enrichment Module (`llm_enrich.py`)
+  - Single batch call for ALL events
+  - Extracts: venue_name, neighborhood, city, cuisine
+  - Classifies: SOCIAL/ACTIVITY/OTHER (solo events)
+  - Flags: is_opaque_url for Places API
+- [ ] **Step 2.2**: Places API Client (`places_client.py`) - opaque URLs only
+  - Follow redirects for goo.gl/maps.app.goo.gl URLs
+  - Extract venue from expanded URL
+  - Fallback to Places API Text Search (cached)
+- [ ] **Step 2.3**: Apply enrichments to FriendStats and events
 
-**LLM Event Classification (Mandatory):**
-- [ ] Step 2.7: Collect solo events (no attendees)
-- [ ] Step 2.8: LLM classification (SOCIAL/ACTIVITY/OTHER) via OpenAI
-- [ ] Step 2.9: Name deduplication & aggregation (for SOCIAL)
-- [ ] Step 2.10: Activity aggregation by category (for ACTIVITY)
-- [ ] Step 2.11: Merge suggestions (inferred ↔ email friends)
+**Aggregation:**
+- [ ] **Step 2.4**: Collect solo events (no attendees)
+- [ ] **Step 2.5**: LLM classification in batch
+- [ ] **Step 2.6**: Name deduplication → InferredFriends
+- [ ] **Step 2.7**: Merge suggestions (inferred ↔ email friends)
+- [ ] **Step 2.8**: Activity aggregation by category
 
 **Output:**
-- [ ] Step 2.12: Update CLI and JSON output with all enrichments
+- [ ] **Step 2.9**: Update CLI and JSON output with all enrichments
 - [ ] Validate LLM output with test cases (see future-phases.md)
 
 ---
