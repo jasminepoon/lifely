@@ -1,31 +1,43 @@
 # Phase 2 Enhancement: Event Summaries in Friend Stats
 
+> **Status**: ✅ **IMPLEMENTED** (2025-12-10)
+
 > **Goal**: Show which events you shared with each friend, with summaries and (later) resolved locations.
 
 ---
 
-## Current State
+## Implementation Summary
 
-### Data Flow
-```
-raw_events (API) → normalize_events() → [NormalizedEvent] → compute_friend_stats() → [FriendStats]
-```
+This enhancement has been implemented. FriendStats now includes full event details:
 
-### FriendStats Today
 ```python
+@dataclass
+class FriendEvent:
+    id: str
+    summary: str | None
+    date: str  # "2025-03-15"
+    hours: float
+    location_raw: str | None = None
+    # Phase 2 location enrichment (pending):
+    venue_name: str | None = None
+    neighborhood: str | None = None
+    cuisine: str | None = None
+
 @dataclass
 class FriendStats:
     email: str
     display_name: str | None
     event_count: int
     total_hours: float
-    event_ids: list[str]  # ← Just IDs, no details
+    events: list[FriendEvent]  # ← Now includes full event details
 ```
 
-### Problem
-- We store `event_ids` but lose the connection to event `summary`, `date`, and `location`
-- The JSON output is incomplete for the "Wrapped" use case
-- To render "You spent 12h with Angela: Dinner at X, Brunch at Y, ..." we need event details
+---
+
+## Original Problem (Solved)
+- We stored `event_ids` but lost the connection to event `summary`, `date`, and `location`
+- The JSON output was incomplete for the "Wrapped" use case
+- To render "You spent 12h with Angela: Dinner at X, Brunch at Y, ..." we needed event details
 
 ---
 
@@ -300,26 +312,37 @@ def enrich_friend_stats(
 
 ## Updated Phase 2 Checklist
 
-### Prerequisites (unchanged)
+### Prerequisites
 - [ ] Enable Places API (New)
-- [ ] Create API Key
-- [ ] Set up billing alerts
+- [ ] Create Google API Key
+- [ ] Set up billing alerts (~$20 budget for ≈1200 places)
+- [ ] Configure Anthropic API Key (`ANTHROPIC_API_KEY`)
 
 ### Implementation Steps
-- [ ] **Step 2.0**: Add FriendEvent model, update FriendStats (this doc)
-- [ ] Step 2.1: Google Maps URL Parser
+
+**Location Enrichment:**
+- [x] **Step 2.0**: Add FriendEvent model, update FriendStats ✅
+- [ ] Step 2.1: Google Maps URL Parser (with redirect following for short URLs)
 - [ ] Step 2.2: Places API Client with caching
 - [ ] Step 2.3: PlaceDetails model
-- [ ] **Step 2.4**: `enrich_friend_stats()` function
-- [ ] Step 2.5: NYC neighborhood mapping
+- [ ] Step 2.4: `enrich_friend_stats()` for locations
+- [ ] Step 2.5: Neighborhood mapping (use Google's data for all cities)
 - [ ] Step 2.6: Cuisine detection
-- [ ] Step 2.7: Update CLI and JSON output
+
+**LLM Friend Extraction (Mandatory):**
+- [ ] Step 2.7: Collect candidate social events (solo events with potential friend mentions)
+- [ ] Step 2.8: LLM friend name extraction (Claude API)
+- [ ] Step 2.9: Name deduplication & aggregation
+- [ ] Step 2.10: Merge suggestions (inferred ↔ email friends)
+
+**Output:**
+- [ ] Step 2.11: Update CLI and JSON output with all enrichments
 
 ---
 
 ## Example Output After Implementation
 
-### Phase 1 (after this change)
+### Phase 1 (current)
 ```json
 {
   "friend_stats": [
@@ -335,13 +358,6 @@ def enrich_friend_stats(
           "date": "2025-03-15",
           "hours": 2.5,
           "location_raw": "Thai Villa, 123 Main St, Brooklyn, NY"
-        },
-        {
-          "id": "def456",
-          "summary": "Coffee catch-up",
-          "date": "2025-04-02",
-          "hours": 1.0,
-          "location_raw": null
         }
       ]
     }
@@ -349,7 +365,7 @@ def enrich_friend_stats(
 }
 ```
 
-### Phase 2 (after location enrichment)
+### Phase 2 (after all enrichments)
 ```json
 {
   "friend_stats": [
@@ -368,18 +384,36 @@ def enrich_friend_stats(
           "venue_name": "Thai Villa",
           "neighborhood": "Williamsburg",
           "cuisine": "Thai"
-        },
-        {
-          "id": "def456",
-          "summary": "Coffee catch-up",
-          "date": "2025-04-02",
-          "hours": 1.0,
-          "location_raw": null,
-          "venue_name": null,
-          "neighborhood": null,
-          "cuisine": null
         }
       ]
+    }
+  ],
+
+  "inferred_friends": [
+    {
+      "name": "Masha",
+      "normalized_name": "masha",
+      "event_count": 3,
+      "total_hours": 6.5,
+      "linked_email": null,
+      "events": [
+        {
+          "id": "ghi789",
+          "summary": "Dinner with Masha",
+          "date": "2025-03-20",
+          "hours": 2.5,
+          "location_raw": "Carbone, NYC"
+        }
+      ]
+    }
+  ],
+
+  "merge_suggestions": [
+    {
+      "inferred_name": "Masha",
+      "suggested_email": "masha.k@gmail.com",
+      "confidence": "high",
+      "reason": "'Masha' matches email prefix"
     }
   ]
 }
@@ -387,28 +421,26 @@ def enrich_friend_stats(
 
 ---
 
-## Files to Modify
+## Files to Modify/Add
 
 | File | Change |
 |------|--------|
-| `models.py` | Add `FriendEvent`, update `FriendStats` |
-| `stats.py` | Update `compute_friend_stats()` to populate events |
-| `cli.py` | Update `_save_stats()` serialization, add `--verbose` |
-
-**Estimated LOC:** ~50 lines changed/added
+| `models.py` | Add `FriendEvent` ✅, `CandidateSocialEvent`, `InferredFriend`, `MergeSuggestion` |
+| `stats.py` | Update `compute_friend_stats()` ✅, add `collect_candidate_social_events()` |
+| `llm_enrich.py` | **NEW**: LLM-based friend name extraction |
+| `dedup.py` | **NEW**: Name normalization, aggregation, merge suggestions |
+| `cli.py` | Update output serialization with all new fields |
+| `.env.example` | Add `ANTHROPIC_API_KEY` |
 
 ---
 
-## Open Questions
+## Resolved Questions
 
 1. **Sort order for events within a friend?**
-   - Chronological (oldest first)?
-   - Reverse chronological (most recent first)?
-   - **Suggestion:** Chronological
+   - ✅ **Chronological** (oldest first) - events come from API sorted by startTime
 
 2. **Include events where friend declined?**
-   - Currently excluded (correct behavior)
+   - ✅ **Excluded** - correct behavior, already implemented
 
 3. **What if summary is None?**
-   - Many events have no title
-   - Display as "(No title)" in verbose mode?
+   - ✅ **Output as null** - UI layer can display as "(No title)" if needed

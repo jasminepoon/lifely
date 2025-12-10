@@ -24,7 +24,7 @@ Enrich events with place data from Google Maps/Places API to answer:
 - [ ] **Enable Geocoding API** (optional, for lat/lng → address)
   - Same process as above
 
-- [ ] **Create API Key**
+- [ ] **Create Google API Key**
   - APIs & Services → Credentials → Create Credentials → API Key
   - Restrict to Places API and Geocoding API
   - Store as `GOOGLE_MAPS_API_KEY` environment variable
@@ -33,16 +33,40 @@ Enrich events with place data from Google Maps/Places API to answer:
   - Places API is pay-per-use (~$17/1000 Place Details calls)
   - Set budget alerts to avoid surprises
 
+- [ ] **Configure LLM API Key**
+  - Get API key from [Anthropic Console](https://console.anthropic.com/)
+  - Store as `ANTHROPIC_API_KEY` environment variable
+  - Used for: extracting friend names from event summaries
+
 ### New Modules
 
 ```
 src/lifely/
 ├── locations.py          # URL parsing, place resolution
 ├── places_client.py      # Google Places API wrapper with caching
-└── neighborhoods.py      # NYC neighborhood mapping
+├── llm_enrich.py         # LLM-based friend name extraction
+└── dedup.py              # Name normalization and merge suggestions
 ```
 
 ### Implementation Steps
+
+#### Step 2.0: FriendEvent Enhancement ✅ DONE
+
+Event summaries and locations are now included in FriendStats. See `planning/phase2-event-summaries.md`.
+
+```python
+@dataclass
+class FriendEvent:
+    id: str
+    summary: str | None
+    date: str
+    hours: float
+    location_raw: str | None = None
+    # To be populated by location enrichment:
+    venue_name: str | None = None
+    neighborhood: str | None = None
+    cuisine: str | None = None
+```
 
 #### Step 2.1: Google Maps URL Parser
 
@@ -123,28 +147,50 @@ class PlaceDetails:
     user_ratings_total: int | None
 ```
 
-#### Step 2.4: NYC Neighborhood Mapping
+#### Step 2.4: Enrich Friend Stats
 
-Google's `addressComponents` sometimes includes `neighborhood` or `sublocality`, but it's inconsistent for NYC.
+After resolving locations, populate the FriendEvent fields:
 
-**Options**:
+```python
+def enrich_friend_stats(
+    stats: list[FriendStats],
+    places_client: PlacesClient,
+) -> list[FriendStats]:
+    """
+    Enrich FriendEvent.location_raw with resolved place details.
+    """
+    for friend in stats:
+        for event in friend.events:
+            if event.location_raw and _is_valid_location(event.location_raw):
+                place = places_client.resolve_location(event.location_raw)
+                if place:
+                    event.venue_name = place.name
+                    event.neighborhood = place.neighborhood
+                    event.cuisine = detect_cuisine(place)
+    return stats
+```
 
-1. **Use Google's data as-is** (easiest, less accurate)
-   - Accept whatever `neighborhood` or `sublocality` Google returns
+#### Step 2.5: Neighborhood Mapping
 
-2. **Postal code mapping** (medium effort, good accuracy)
-   - Maintain a lookup table: ZIP → neighborhood
-   - NYC has well-defined ZIP boundaries
-   - Example: 10002 → "Lower East Side"
+**Decision**: Use Google's `neighborhood` or `sublocality` data for all cities.
 
-3. **Coordinate-based lookup** (most accurate, more effort)
-   - Use NYC neighborhood boundary polygons (available as open data)
-   - Point-in-polygon test for each lat/lng
-   - Libraries: `shapely`, `geopandas`
+```python
+def extract_neighborhood(place: PlaceDetails) -> str | None:
+    """
+    Extract neighborhood from Google's address components.
 
-**Recommendation**: Start with option 1, add option 2 if results are unsatisfying.
+    Priority:
+    1. neighborhood component
+    2. sublocality component
+    3. None if neither available
+    """
+    # Google's addressComponents includes neighborhood for many places
+    # Works reasonably well across all cities
+```
 
-#### Step 2.5: Cuisine Detection
+**Future enhancement** (if needed): Add ZIP → neighborhood lookup table for NYC.
+
+#### Step 2.6: Cuisine Detection
 
 For restaurant-type places, extract cuisine:
 
@@ -173,11 +219,181 @@ def detect_cuisine(place: PlaceDetails) -> str | None:
     # 3. Keyword match on name
 ```
 
-### Updated Stats (Phase 2)
+#### Step 2.7: Collect Candidate Social Events
 
-Add to `stats.py`:
+Identify solo events (no attendees) that might mention friends:
 
 ```python
+NON_SOCIAL_KEYWORDS = {"flight", "dentist", "doctor", "gym", "haircut",
+                        "reminder", "deadline", "standup", "sync"}
+
+def collect_candidate_social_events(
+    events: list[NormalizedEvent]
+) -> list[CandidateSocialEvent]:
+    """Find solo events that might mention friends."""
+    candidates = []
+    for event in events:
+        # Skip if has attendees (already in friend_stats)
+        if any(not a.is_self for a in event.attendees):
+            continue
+        if not event.summary:
+            continue
+        # Skip obvious non-social events
+        if any(kw in event.summary.lower() for kw in NON_SOCIAL_KEYWORDS):
+            continue
+        candidates.append(CandidateSocialEvent(...))
+    return candidates
+```
+
+#### Step 2.8: LLM Friend Name Extraction (Mandatory)
+
+Use Claude to extract friend names from event summaries:
+
+```python
+# In llm_enrich.py
+def extract_friends_with_llm(
+    candidates: list[CandidateSocialEvent],
+    client: Anthropic,
+) -> list[tuple[CandidateSocialEvent, list[str]]]:
+    """Extract friend names from event summaries using LLM."""
+
+    # Batch events (50 per request for efficiency)
+    prompt = f"""Extract person names from these calendar events.
+
+{chr(10).join(f'- "{e.summary}"' for e in batch)}
+
+Return JSON: [{{"summary": "...", "names": ["Name"] or null}}]
+
+Only extract actual person names, not:
+- Generic terms (team, family, group)
+- Places or activities
+- The calendar owner themselves"""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    # Parse response and return (event, names) pairs
+```
+
+#### Step 2.9: Name Deduplication & Aggregation
+
+Normalize and aggregate inferred friends:
+
+```python
+# In dedup.py
+def normalize_name(name: str) -> str:
+    """Normalize name for deduplication."""
+    return name.strip().lower()
+
+def aggregate_inferred_friends(
+    events_with_names: list[tuple[CandidateSocialEvent, list[str]]]
+) -> list[InferredFriend]:
+    """Aggregate LLM-extracted names into deduplicated friends."""
+    by_name: dict[str, dict] = defaultdict(
+        lambda: {"display_name": None, "events": [], "total_hours": 0.0}
+    )
+
+    for event, names in events_with_names:
+        for name in names:
+            key = normalize_name(name)
+            by_name[key]["total_hours"] += event.hours
+            by_name[key]["events"].append(event)
+            if by_name[key]["display_name"] is None:
+                by_name[key]["display_name"] = name
+
+    return [InferredFriend(...) for key, data in by_name.items()]
+```
+
+#### Step 2.10: Merge Suggestions (Inferred ↔ Email Friends)
+
+Suggest links between inferred names and email-based friends:
+
+```python
+def suggest_merges(
+    inferred: list[InferredFriend],
+    email_friends: list[FriendStats],
+) -> list[MergeSuggestion]:
+    """Suggest links between inferred names and email friends."""
+    suggestions = []
+
+    for inf in inferred:
+        for ef in email_friends:
+            email_prefix = ef.email.split("@")[0].lower()
+            if inf.normalized_name in email_prefix:
+                suggestions.append(MergeSuggestion(
+                    inferred_name=inf.name,
+                    suggested_email=ef.email,
+                    confidence="high",
+                    reason=f"'{inf.name}' matches email prefix",
+                ))
+
+    return suggestions
+```
+
+#### Step 2.11: Updated Pipeline Flow
+
+```
+┌──────────────┐     ┌─────────────┐     ┌──────────────┐
+│ Fetch Events │ ──▶ │ Normalize   │ ──▶ │ Email-based  │
+│              │     │             │     │ friend_stats │
+└──────────────┘     └─────────────┘     └──────────────┘
+                            │
+                            ▼
+                     ┌─────────────┐     ┌──────────────┐
+                     │ Collect     │ ──▶ │ LLM Extract  │
+                     │ Candidates  │     │ Names        │
+                     └─────────────┘     └──────────────┘
+                                               │
+                                               ▼
+                     ┌─────────────┐     ┌──────────────┐
+                     │ Deduplicate │ ──▶ │ Suggest      │
+                     │ & Aggregate │     │ Merges       │
+                     └─────────────┘     └──────────────┘
+                                               │
+                                               ▼
+                     ┌─────────────────────────────────┐
+                     │ Final Output:                   │
+                     │ - friend_stats (email-based)    │
+                     │ - inferred_friends (LLM-based)  │
+                     │ - merge_suggestions             │
+                     │ - location enrichments          │
+                     └─────────────────────────────────┘
+```
+
+### Updated Stats (Phase 2)
+
+Add to `models.py`:
+
+```python
+@dataclass
+class CandidateSocialEvent:
+    """Solo event that might mention a friend (for LLM extraction)."""
+    id: str
+    summary: str
+    date: str
+    hours: float
+    location_raw: str | None
+
+@dataclass
+class InferredFriend:
+    """Friend inferred from event summaries via LLM (no email)."""
+    name: str                    # Display: "Masha"
+    normalized_name: str         # Dedup key: "masha"
+    event_count: int
+    total_hours: float
+    events: list[FriendEvent]
+    linked_email: str | None = None  # Set if merged with email friend
+
+@dataclass
+class MergeSuggestion:
+    """Suggestion to link inferred friend to email-based friend."""
+    inferred_name: str
+    suggested_email: str
+    confidence: str              # "high", "medium", "low"
+    reason: str
+
 @dataclass
 class VenueStats:
     place_id: str
@@ -196,7 +412,11 @@ class NeighborhoodStats:
     total_hours: float
     top_venues: list[str]
     dominant_cuisines: list[str]
+```
 
+Add to `stats.py`:
+
+```python
 def compute_location_stats(events: list[NormalizedEvent]) -> LocationStats:
     """
     Aggregate by:
@@ -207,19 +427,20 @@ def compute_location_stats(events: list[NormalizedEvent]) -> LocationStats:
     """
 ```
 
-### Open Questions for Phase 2
+### Resolved Questions for Phase 2
 
-1. **Budget**: How much are you willing to spend on Places API?
-   - 100 unique places ≈ $1.70
-   - 1000 unique places ≈ $17
+1. **Budget**: ~$20 (≈1200 places)
+   - Comprehensive coverage of most venues
    - Caching makes re-runs free
 
-2. **Short URLs**: Should we follow redirects for `goo.gl` links?
-   - Adds complexity but improves resolution rate
+2. **Short URLs**: ✅ Yes, follow redirects for `goo.gl` links
+   - Better resolution rate, worth the extra HTTP requests
 
-3. **Location confidence threshold**: Skip enrichment if location string looks like garbage?
+3. **Location confidence threshold**: Skip obviously invalid strings
+   - Empty strings, single words like "TBD", etc.
 
-4. **Non-NYC handling**: Just report city, or try neighborhood mapping for other cities too?
+4. **Non-NYC handling**: ✅ Try neighborhoods everywhere
+   - Use Google's neighborhood/sublocality data for all cities
 
 ---
 
@@ -430,4 +651,4 @@ Based on Flighty's aesthetic:
 | 4 | Visual UI | Flighty-inspired HTML/CSS wrapped experience |
 | 5 | Polish | Multi-calendar, comparisons, network viz |
 
-**Current focus**: Phase 1
+**Current focus**: Phase 2 (Location Intelligence)
