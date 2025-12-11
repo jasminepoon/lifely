@@ -105,8 +105,28 @@ From `style-guide.md`:
 ```
 lifely/
 ├── planning/          # You are here
+├── lifely-web-react/  # React frontend (active development)
 ├── spikes/            # UI prototypes (standalone HTML)
-├── lifely-web/        # Web application source
+├── lifely-web/        # Vanilla JS version (archived)
 ├── src/lifely/        # Python CLI tool
-└── ui_screenshots/    # Reference designs
+└── ui_screenshots/    # Reference designs (gitignored)
 ```
+
+---
+
+## Quick Start
+
+### Run the CLI
+```bash
+uv run lifely --enrich --top 5
+```
+
+### Run the React App
+```bash
+cd lifely-web-react
+npm run dev   # http://localhost:5173
+```
+
+### Preview Landing States
+- URL: `?state=processing`, `?state=declined`, etc.
+- Keyboard: Press `1`-`7` to switch states

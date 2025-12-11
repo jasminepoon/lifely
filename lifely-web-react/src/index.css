@@ -1,0 +1,291 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════
+   LIFELY DESIGN TOKENS
+   Source: planning/style-guide.md
+   ═══════════════════════════════════════════════════════════ */
+
+@theme {
+  /* Colors - Dark-first palette */
+  --color-bg-base: #0A0F1A;
+  --color-bg-card: #111827;
+  --color-bg-elevated: #1F2937;
+
+  --color-accent-cyan: #00D4FF;
+  --color-accent-cyan-dim: rgba(0, 212, 255, 0.15);
+  --color-accent-warm: #FF6B6B;
+  --color-accent-warm-dim: rgba(255, 107, 107, 0.15);
+  --color-accent-gold: #FFD93D;
+
+  --color-text-primary: #F9FAFB;
+  --color-text-secondary: #9CA3AF;
+  --color-text-muted: #6B7280;
+
+  --color-border-default: rgba(255, 255, 255, 0.1);
+  --color-border-active: rgba(0, 212, 255, 0.4);
+
+  /* Gradients */
+  --gradient-hero: linear-gradient(135deg, #0A0F1A 0%, #1a1f3a 50%, #0A0F1A 100%);
+  --gradient-card: linear-gradient(180deg, rgba(17, 24, 39, 0.8) 0%, rgba(17, 24, 39, 0.95) 100%);
+  --gradient-accent: linear-gradient(90deg, #00D4FF 0%, #00FF88 100%);
+  --gradient-warm: linear-gradient(90deg, #FF6B6B 0%, #FFD93D 100%);
+
+  /* Typography scale */
+  --font-family-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-family-body: 'Inter', system-ui, sans-serif;
+
+  /* Spacing scale (4px base) */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 48px;
+  --spacing-3xl: 64px;
+
+  /* Border radius - New York style (sharper) */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* Shadows with glow effects */
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow-cyan: 0 0 20px rgba(0, 212, 255, 0.3);
+  --shadow-glow-warm: 0 0 20px rgba(255, 107, 107, 0.3);
+
+  /* Animation timings */
+  --duration-fast: 150ms;
+  --duration-normal: 300ms;
+  --duration-slow: 500ms;
+  --duration-reveal: 800ms;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BASE STYLES
+   ═══════════════════════════════════════════════════════════ */
+
+@layer base {
+  * {
+    border-color: var(--color-border-default);
+  }
+
+  html {
+    font-family: var(--font-family-body);
+    color-scheme: dark;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-bg-base text-text-primary antialiased;
+    margin: 0;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Display typography */
+  h1, h2, h3 {
+    font-family: var(--font-family-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  /* Focus states - accessible but on-brand */
+  :focus-visible {
+    outline: 2px solid var(--color-accent-cyan);
+    outline-offset: 2px;
+  }
+
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MAXIMUM WOW EFFECTS
+   ═══════════════════════════════════════════════════════════ */
+
+/* Animated gradient background */
+.bg-animated-gradient {
+  background: var(--gradient-hero);
+  background-size: 200% 200%;
+  animation: gradient-shift 15s ease infinite;
+}
+
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* Glassmorphism card */
+.glass {
+  background: rgba(17, 24, 39, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Glow effects */
+.glow-cyan {
+  box-shadow: var(--shadow-glow-cyan);
+}
+
+.glow-warm {
+  box-shadow: var(--shadow-glow-warm);
+}
+
+/* Text gradient */
+.text-gradient {
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-warm {
+  background: var(--gradient-warm);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Floating animation */
+.float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+/* Pulse glow animation */
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(0, 212, 255, 0.6); }
+}
+
+/* Staggered reveal animation */
+.reveal-up {
+  animation: reveal-up var(--duration-reveal) var(--ease-out) forwards;
+  opacity: 0;
+}
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Custom cursor on hover */
+.cursor-glow {
+  cursor: none;
+  position: relative;
+}
+
+.cursor-glow::after {
+  content: '';
+  position: fixed;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0, 212, 255, 0.6) 0%, transparent 70%);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.cursor-glow:hover::after {
+  opacity: 1;
+}
+
+/* Sparkbar fill animation */
+.sparkbar {
+  position: relative;
+  overflow: hidden;
+}
+
+.sparkbar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  animation: sparkbar-shimmer 2s ease-in-out infinite;
+}
+
+@keyframes sparkbar-shimmer {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+/* Parallax container */
+.parallax-container {
+  perspective: 1000px;
+  overflow: hidden;
+}
+
+.parallax-layer {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+/* Number countup highlight */
+.countup-highlight {
+  transition: transform 0.1s ease-out;
+}
+
+.countup-highlight.counting {
+  transform: scale(1.05);
+}
+
+/* Particle canvas positioning */
+.particles-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Page transition */
+.page-enter {
+  animation: page-enter 0.5s var(--ease-out) forwards;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
