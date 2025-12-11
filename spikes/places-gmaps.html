@@ -48,111 +48,124 @@
   </div>
 
   <script type="module">
-    const DATA_URL = '/data/stats_2025.json';
-    const statusEl = document.getElementById('map-status');
-    const mapEl = document.getElementById('map');
+    (async () => {
+      const DATA_URL = '/data/stats_2025.json';
+      const statusEl = document.getElementById('map-status');
+      const mapEl = document.getElementById('map');
 
-    const urlKey = new URLSearchParams(location.search).get('key');
-    const storedKey = localStorage.getItem('GMAPS_KEY');
-    const apiKey = urlKey || storedKey;
-
-    if (!apiKey) {
-      statusEl.textContent = 'Add your Google Maps JS API key via ?key=... or localStorage, then reload.';
-    } else {
-      localStorage.setItem('GMAPS_KEY', apiKey);
-      loadScript(apiKey)
-        .then(initMap)
-        .catch((err) => {
-          console.error(err);
-          statusEl.textContent = 'Map failed to load. Check API key and console.';
-        });
-    }
-
-    function loadScript(key) {
-      return new Promise((resolve, reject) => {
-        const existing = document.querySelector('script[data-google="maps"]');
-        if (existing) return resolve();
-        const s = document.createElement('script');
-        s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=visualization`;
-        s.async = true;
-        s.defer = true;
-        s.dataset.google = 'maps';
-        s.onload = resolve;
-        s.onerror = reject;
-        document.head.appendChild(s);
-      });
-    }
-
-    async function initMap() {
-      statusEl.textContent = 'Loading map…';
-      let data;
+      const urlKey = new URLSearchParams(location.search).get('key');
+      const storedKey = localStorage.getItem('GMAPS_KEY');
+      let fileKey;
       try {
-        data = await fetch(DATA_URL).then((r) => r.json());
+        // Optional, gitignored: spikes/local-config.js exporting GMAPS_KEY
+        const mod = await import('./local-config.js');
+        fileKey = mod.GMAPS_KEY || window.GMAPS_KEY;
+      } catch (_) {
+        // ignore missing
+      }
+      const apiKey = urlKey || storedKey || fileKey;
+
+      if (!apiKey) {
+        statusEl.textContent =
+          'Add your Google Maps JS API key via ?key=..., localStorage, or spikes/local-config.js, then reload.';
+        return;
+      }
+
+      localStorage.setItem('GMAPS_KEY', apiKey);
+      try {
+        await loadScript(apiKey);
+        await initMap();
       } catch (err) {
         console.error(err);
-        statusEl.textContent = 'Could not load stats_2025.json';
-        return;
+        statusEl.textContent = 'Map failed to load. Check API key and console.';
       }
 
-      const points = (data.location_stats?.map_points || []).filter(
-        (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)
-      );
-      if (!points.length) {
-        statusEl.textContent = 'No lat/lng found. Ensure Places enrichment succeeded.';
-        return;
+      function loadScript(key) {
+        return new Promise((resolve, reject) => {
+          const existing = document.querySelector('script[data-google=\"maps\"]');
+          if (existing) return resolve();
+          const s = document.createElement('script');
+          s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=visualization`;
+          s.async = true;
+          s.defer = true;
+          s.dataset.google = 'maps';
+          s.onload = resolve;
+          s.onerror = reject;
+          document.head.appendChild(s);
+        });
       }
 
-      const map = new google.maps.Map(mapEl, {
-        backgroundColor: '#0b1222',
-        disableDefaultUI: true,
-        gestureHandling: 'greedy',
-        styles: [
-          { elementType: 'geometry', stylers: [{ color: '#0b1222' }] },
-          { elementType: 'labels.text.fill', stylers: [{ color: '#7b8da5' }] },
-          { elementType: 'labels.text.stroke', stylers: [{ color: '#0b1222' }] },
-          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-          { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-          { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1a2235' }] },
-          { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-          { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f1b2f' }] },
-        ],
-      });
+      async function initMap() {
+        statusEl.textContent = 'Loading map…';
+        let data;
+        try {
+          data = await fetch(DATA_URL).then((r) => r.json());
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = 'Could not load stats_2025.json';
+          return;
+        }
 
-      const bounds = new google.maps.LatLngBounds();
-      points.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
-      if (!bounds.isEmpty()) {
-        map.fitBounds(bounds, { top: 24, bottom: 24, left: 24, right: 24 });
-      } else {
-        map.setCenter({ lat: 40.7128, lng: -74.006 });
-        map.setZoom(12);
+        const points = (data.location_stats?.map_points || []).filter(
+          (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)
+        );
+        if (!points.length) {
+          statusEl.textContent = 'No lat/lng found. Ensure Places enrichment succeeded.';
+          return;
+        }
+
+        const map = new google.maps.Map(mapEl, {
+          backgroundColor: '#0b1222',
+          disableDefaultUI: true,
+          gestureHandling: 'greedy',
+          styles: [
+            { elementType: 'geometry', stylers: [{ color: '#0b1222' }] },
+            { elementType: 'labels.text.fill', stylers: [{ color: '#7b8da5' }] },
+            { elementType: 'labels.text.stroke', stylers: [{ color: '#0b1222' }] },
+            { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+            { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+            { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1a2235' }] },
+            { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+            { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f1b2f' }] },
+          ],
+        });
+
+        const bounds = new google.maps.LatLngBounds();
+        points.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+        if (!bounds.isEmpty()) {
+          map.fitBounds(bounds, { top: 24, bottom: 24, left: 24, right: 24 });
+        } else {
+          map.setCenter({ lat: 40.7128, lng: -74.006 });
+          map.setZoom(12);
+        }
+
+        const heatData = points.map(
+          (p) =>
+            ({
+              location: new google.maps.LatLng(p.lat, p.lng),
+              weight: p.count || 1,
+            })
+        );
+
+        new google.maps.visualization.HeatmapLayer({
+          data: heatData,
+          dissipating: true,
+          radius: 26,
+          opacity: 0.82,
+          gradient: [
+            'rgba(0, 255, 255, 0)',
+            'rgba(0, 255, 255, 0.25)',
+            'rgba(0, 220, 255, 0.45)',
+            'rgba(0, 190, 255, 0.65)',
+            'rgba(0, 150, 255, 0.85)',
+            'rgba(0, 120, 255, 0.95)',
+          ],
+          map,
+        });
+
+        statusEl.textContent = `${points.length} locations plotted via Google Maps heatmap`;
       }
-
-      const heatData = points.map(
-        (p) =>
-          ({
-            location: new google.maps.LatLng(p.lat, p.lng),
-            weight: p.count || 1,
-          })
-      );
-
-      const heatmap = new google.maps.visualization.HeatmapLayer({
-        data: heatData,
-        dissipating: true,
-        radius: 26,
-        opacity: 0.82,
-        gradient: [
-          'rgba(0, 255, 255, 0)',
-          'rgba(0, 255, 255, 0.25)',
-          'rgba(0, 220, 255, 0.45)',
-          'rgba(0, 190, 255, 0.65)',
-          'rgba(0, 150, 255, 0.85)',
-          'rgba(0, 120, 255, 0.95)',
-        ],
-        map,
-      });
-
-      statusEl.textContent = `${points.length} locations plotted via Google Maps heatmap`;
-    }
+    })();
   </script>
 </body>
 </html>
