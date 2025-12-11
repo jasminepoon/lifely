@@ -10,8 +10,8 @@ export function renderConstellationHeat(options) {
     minPoints = 15,
     legend = 'NYC area · dot size = visit count',
     palette = {
-      base: 'rgba(0, 212, 255, 0.7)',
-      shadow: 'rgba(0, 212, 255, 0.35)',
+      base: 'rgba(0, 235, 255, 0.9)',
+      shadow: 'rgba(0, 212, 255, 0.5)',
     },
   } = options || {};
 
@@ -46,7 +46,7 @@ export function renderConstellationHeat(options) {
   const padLat = latSpan * 0.05;
   const padLng = lngSpan * 0.05;
 
-  const jitter = () => (Math.random() - 0.5) * 0.8;
+  const jitter = () => (Math.random() - 0.5) * 0.6;
 
   // Legend
   const legendEl = document.createElement('div');
@@ -60,14 +60,15 @@ export function renderConstellationHeat(options) {
 
     const dot = document.createElement('div');
     dot.className = 'map__dot';
-    const size = 8 + 6 * Math.sqrt((p.count || 1) / maxCount);
+    const size = 10 + 7 * Math.sqrt((p.count || 1) / maxCount);
     dot.style.left = `${left}%`;
     dot.style.top = `${top}%`;
     dot.style.width = `${size}px`;
     dot.style.height = `${size}px`;
     dot.style.background = palette.base;
-    dot.style.boxShadow = `0 0 18px ${palette.shadow}`;
-    dot.style.opacity = Math.min(0.85, 0.45 + (p.count || 1) / maxCount);
+    dot.style.boxShadow = `0 0 8px ${palette.base}, 0 0 26px ${palette.shadow}`;
+    dot.style.border = '1px solid rgba(255, 255, 255, 0.22)';
+    dot.style.opacity = Math.min(0.95, 0.6 + 0.5 * ((p.count || 1) / maxCount));
     dot.title = `${p.label || 'Location'} · ${p.count || 1}`;
     el.appendChild(dot);
   });
