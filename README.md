@@ -127,16 +127,17 @@ lifely/
 | 3 | Full stats and LLM prompt generation | Planned |
 | 4 | Visual UI (Flighty-inspired) | Planned |
 
-### Phase 2 Prerequisites (Coming)
-
-Phase 2 will require additional API keys:
+### Phase 2 Prerequisites
 
 ```bash
-# Google Places API (for location enrichment)
-export GOOGLE_MAPS_API_KEY=your_key_here
+# OpenAI API (for --enrich)
+export OPENAI_API_KEY="sk-..."
+# Default models (can override; defaults to gpt-5.1)
+export LIFELY_LLM_LOCATION_MODEL="gpt-5.1"
+export LIFELY_LLM_CLASSIFICATION_MODEL="gpt-5.1"
 
-# OpenAI API (for friend/activity extraction from event summaries)
-export OPENAI_API_KEY=your_key_here
+# Google Places API (optional; resolves Maps links, can return lat/lng)
+export GOOGLE_MAPS_API_KEY="your_key_here"
 ```
 
 See `planning/` for detailed specs.
