@@ -5,6 +5,7 @@
 # Data outputs (large, regenerable)
 data/*
 !data/.gitkeep
+ui_screenshots/
 
 # Python
 __pycache__/
