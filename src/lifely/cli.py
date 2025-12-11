@@ -37,6 +37,8 @@ console = Console()
 
 def main() -> None:
     """Main CLI entrypoint."""
+    _load_env_file()
+
     parser = argparse.ArgumentParser(
         description="Lifely - Google Calendar Wrapped",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -374,6 +376,27 @@ def _save_stats(
         json.dump(output, f, indent=2)
 
     console.print(f"\n[dim]Stats saved to {output_path}[/dim]")
+
+
+def _load_env_file(env_path: Path | None = None) -> None:
+    """Load a local .env file if present (without overriding existing env)."""
+    path = env_path or (Path(__file__).resolve().parent.parent / ".env")
+    if not path.exists():
+        return
+    try:
+        with open(path) as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or "=" not in stripped:
+                    continue
+                key, value = stripped.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except Exception:
+        # Fail quietly; CLI already surfaces missing keys with warnings.
+        return
 
 
 if __name__ == "__main__":
