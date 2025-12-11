@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2025 Wrapped</title>
+  <meta name="description" content="Your year in moments. See your 2025 calendar, visualized.">
+  <meta name="theme-color" content="#0A0F1A">
+
+  <!-- Preconnect to Google for OAuth -->
+  <link rel="preconnect" href="https://accounts.google.com">
+  <link rel="preconnect" href="https://apis.google.com">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles/base.css">
+  <link rel="stylesheet" href="styles/landing.css">
+</head>
+<body>
+  <main id="app">
+    <!-- State: Loading (token validation) -->
+    <section id="state-loading" class="state" aria-label="Loading">
+      <div class="loader-dot"></div>
+    </section>
+
+    <!-- State: Valid token (main landing) -->
+    <section id="state-valid" class="state hidden" aria-label="Connect your calendar">
+      <div class="landing-content">
+        <div class="progress-dots" aria-hidden="true">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+
+        <div class="hero-text">
+          <h1 class="year">2025</h1>
+          <p class="wrapped-label">WRAPPED</p>
+          <p class="tagline">Your year in moments.</p>
+        </div>
+
+        <button id="btn-connect" class="btn-primary" type="button">
+          Connect Calendar
+        </button>
+
+        <p class="privacy-note">Read-only · Stays in your browser</p>
+
+        <button id="btn-how" class="link-button" type="button">
+          How this works <span aria-hidden="true">↓</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- State: Invalid/expired token -->
+    <section id="state-invalid" class="state hidden" aria-label="Link expired">
+      <div class="landing-content">
+        <div class="hero-text">
+          <h1 class="year">2025</h1>
+          <p class="wrapped-label">WRAPPED</p>
+        </div>
+
+        <div class="message-box">
+          <p class="message-title">This link has expired.</p>
+          <p class="message-body">
+            Each link works up to 3 times.<br>
+            Ask for a new one to continue.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- State: OAuth pending (popup open) -->
+    <section id="state-oauth" class="state hidden" aria-label="Signing in">
+      <div class="landing-content">
+        <div class="progress-dots" aria-hidden="true">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+
+        <div class="hero-text">
+          <h1 class="year">2025</h1>
+          <p class="wrapped-label">WRAPPED</p>
+          <p class="tagline">Waiting for Google sign-in...</p>
+        </div>
+
+        <button class="btn-primary btn-disabled" type="button" disabled>
+          Waiting...
+        </button>
+
+        <p class="privacy-note">Complete sign-in in the popup.</p>
+
+        <button id="btn-popup-blocked" class="link-button hidden" type="button">
+          Popup blocked? Click to retry
+        </button>
+      </div>
+    </section>
+
+    <!-- State: OAuth declined -->
+    <section id="state-declined" class="state hidden" aria-label="Access declined">
+      <div class="landing-content">
+        <div class="hero-text">
+          <h1 class="year">2025</h1>
+          <p class="wrapped-label">WRAPPED</p>
+        </div>
+
+        <div class="message-box">
+          <p class="message-title">No worries.</p>
+          <p class="message-body">
+            We need calendar access to show your year in review.
+            We only read events — we can't change anything.
+          </p>
+        </div>
+
+        <button id="btn-retry" class="btn-primary" type="button">
+          Try Again
+        </button>
+
+        <button id="btn-permissions" class="link-button" type="button">
+          What permissions exactly?
+        </button>
+      </div>
+    </section>
+
+    <!-- State: Processing -->
+    <section id="state-processing" class="state hidden" aria-label="Processing your calendar">
+      <div class="landing-content">
+        <div class="progress-dots" aria-hidden="true">
+          <span class="dot active"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+
+        <p id="processing-message" class="processing-text">Fetching your calendar...</p>
+
+        <div class="progress-bar-container" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+          <div id="progress-bar" class="progress-bar-fill"></div>
+        </div>
+
+        <p class="time-estimate">This takes about 30 seconds.</p>
+      </div>
+    </section>
+
+    <!-- State: Error -->
+    <section id="state-error" class="state hidden" aria-label="Error">
+      <div class="landing-content">
+        <div class="hero-text">
+          <h1 class="year">2025</h1>
+          <p class="wrapped-label">WRAPPED</p>
+        </div>
+
+        <div class="message-box">
+          <p class="message-title">Something went wrong.</p>
+          <p class="message-body" id="error-message">
+            We couldn't load your calendar data.
+            This might be a temporary issue.
+          </p>
+        </div>
+
+        <button id="btn-error-retry" class="btn-primary" type="button">
+          Try Again
+        </button>
+
+        <a href="mailto:hello@thirdplane.io" class="link-button">
+          Still not working? Let us know.
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal: How this works -->
+  <div id="modal-how" class="modal hidden" role="dialog" aria-labelledby="modal-how-title" aria-modal="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <button class="modal-close" aria-label="Close">&times;</button>
+      <h2 id="modal-how-title" class="modal-title">How this works</h2>
+
+      <ol class="steps-list">
+        <li>
+          <span class="step-title">You sign in with Google</span>
+          <span class="step-detail">We never see your password.</span>
+        </li>
+        <li>
+          <span class="step-title">Your calendar loads in your browser</span>
+          <span class="step-detail">The full calendar stays on your device.</span>
+        </li>
+        <li>
+          <span class="step-title">AI finds patterns in your year</span>
+          <span class="step-detail">Event titles and locations are sent to OpenAI to generate your story. We don't log or store any of this.</span>
+        </li>
+        <li>
+          <span class="step-title">Close the tab and it's gone</span>
+        </li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- Modal: Permissions -->
+  <div id="modal-permissions" class="modal hidden" role="dialog" aria-labelledby="modal-permissions-title" aria-modal="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <button class="modal-close" aria-label="Close">&times;</button>
+      <h2 id="modal-permissions-title" class="modal-title">Permissions we request</h2>
+
+      <ul class="permissions-list">
+        <li class="permission allowed">
+          <span class="permission-icon">✓</span>
+          <div>
+            <span class="permission-name">View events on your calendars</span>
+            <span class="permission-reason">So we can analyze your year.</span>
+          </div>
+        </li>
+        <li class="permission denied">
+          <span class="permission-icon">✗</span>
+          <div>
+            <span class="permission-name">Create, edit, or delete events</span>
+            <span class="permission-reason">We can't change anything.</span>
+          </div>
+        </li>
+        <li class="permission denied">
+          <span class="permission-icon">✗</span>
+          <div>
+            <span class="permission-name">Access your contacts</span>
+            <span class="permission-reason">We don't need them.</span>
+          </div>
+        </li>
+        <li class="permission denied">
+          <span class="permission-icon">✗</span>
+          <div>
+            <span class="permission-name">Access your email</span>
+            <span class="permission-reason">Not requested.</span>
+          </div>
+        </li>
+      </ul>
+
+      <p class="permissions-footer">We use the minimum permissions needed.</p>
+    </div>
+  </div>
+
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
