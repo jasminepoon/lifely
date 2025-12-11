@@ -380,7 +380,13 @@ def _save_stats(
 
 def _load_env_file(env_path: Path | None = None) -> None:
     """Load a local .env file if present (without overriding existing env)."""
-    path = env_path or (Path(__file__).resolve().parent.parent / ".env")
+    if env_path:
+        path = env_path
+    else:
+        here = Path(__file__).resolve()
+        # Try repo root (.env alongside README) then fallback to src/.env
+        candidates = [here.parents[2] / ".env", here.parents[1] / ".env"]
+        path = next((p for p in candidates if p.exists()), candidates[-1])
     if not path.exists():
         return
     try:
