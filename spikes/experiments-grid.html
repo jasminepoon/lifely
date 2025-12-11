@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Experiments Grid Spike | Lifely</title>
+  <link rel="stylesheet" href="base.css" />
+  <style>
+    .exp-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .exp-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 14px;
+      display: grid;
+      gap: 6px;
+    }
+    .exp-chip {
+      display: inline-flex;
+      padding: 4px 10px;
+      border-radius: var(--radius-chip);
+      border: 1px solid var(--border-accent);
+      background: rgba(0, 212, 255, 0.12);
+      color: var(--accent-cyan);
+      font-weight: 700;
+      width: fit-content;
+    }
+    .exp-title {
+      margin: 0;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .exp-desc {
+      margin: 0;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body class="page">
+  <div class="container">
+    <div class="progress-dots" style="margin-bottom:16px;">
+      <span></span><span></span><span></span><span></span><span></span><span></span><span class="is-active"></span>
+    </div>
+    <div class="card">
+      <div class="heading">For 2026, consider (grid)</div>
+      <div class="exp-grid" id="exp-grid"></div>
+    </div>
+  </div>
+  <script type="module">
+    const ideas = [
+      { title: 'A new neighborhood', desc: 'You never ventured to the Upper West Side. Pick one Saturday.' },
+      { title: 'Brunch with Beth', desc: 'All 12 hangs were dinners. Try one daylight adventure.' },
+      { title: 'A cooking class', desc: 'Seventeen Japanese meals say you love it—learn to make one.' },
+      { title: 'No-phone Friday', desc: 'Block 2 hours screen-free; see what shows up.' },
+    ];
+    const grid = document.getElementById('exp-grid');
+    ideas.forEach((idea, idx) => {
+      grid.insertAdjacentHTML('beforeend', `
+        <div class="exp-card">
+          <span class="exp-chip">${idx + 1}</span>
+          <p class="exp-title">${idea.title}</p>
+          <p class="exp-desc">${idea.desc}</p>
+        </div>
+      `);
+    });
+  </script>
+</body>
+</html>

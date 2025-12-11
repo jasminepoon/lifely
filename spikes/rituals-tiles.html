@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ritual Tiles Spike | Lifely</title>
+  <link rel="stylesheet" href="base.css" />
+  <style>
+    .tiles {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .tile {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 14px;
+      display: grid;
+      gap: 6px;
+    }
+    .tile__title {
+      margin: 0;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .tile__meta {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+    .tile__spark {
+      height: 6px;
+      background: var(--bg-surface);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .tile__fill {
+      height: 100%;
+      width: 0;
+      background: var(--gradient-accent);
+      transition: width 600ms var(--ease-out);
+    }
+    .tile__tag {
+      display: inline-flex;
+      padding: 4px 10px;
+      border-radius: var(--radius-chip);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      width: fit-content;
+    }
+  </style>
+</head>
+<body class="page">
+  <div class="container">
+    <div class="progress-dots" style="margin-bottom:16px;">
+      <span></span><span></span><span></span><span class="is-active"></span><span></span><span></span><span></span>
+    </div>
+    <div class="card">
+      <div class="heading">Your rituals (tiles)</div>
+      <div class="tiles" id="tiles"></div>
+    </div>
+  </div>
+  <script type="module">
+    import { animateBars } from './base.js';
+    const rituals = [
+      { name: 'Therapy', count: 15, venue: 'Greenpoint Psychotherapy' },
+      { name: 'Yoga', count: 13, venue: 'Vital' },
+      { name: 'Climbing', count: 7, venue: 'Brooklyn Boulders' },
+      { name: 'Pilates', count: 5, venue: 'Forma' },
+    ];
+    const max = Math.max(...rituals.map(r => r.count), 1);
+    const tiles = document.getElementById('tiles');
+    rituals.forEach(r => {
+      const pct = Math.round((r.count / max) * 100);
+      tiles.insertAdjacentHTML('beforeend', `
+        <div class="tile">
+          <p class="tile__title">${r.name}</p>
+          <p class="tile__meta">${r.count} sessions</p>
+          <span class="tile__tag">${r.venue}</span>
+          <div class="tile__spark"><div class="tile__fill" data-value="${pct}"></div></div>
+        </div>
+      `);
+    });
+    requestAnimationFrame(() => animateBars('.tile__fill'));
+  </script>
+</body>
+</html>
