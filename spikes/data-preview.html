@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Data Preview | Lifely</title>
+  <link rel="stylesheet" href="base.css" />
+</head>
+<body class="page">
+  <div class="container">
+    <div class="progress-dots" style="margin-bottom:16px;">
+      <span class="is-active"></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+
+    <section class="hero" style="margin-bottom:18px;">
+      <div class="hero__eyebrow">Wrapped preview</div>
+      <h1 class="hero__year" id="year">—</h1>
+      <p class="hero__subtitle">Your year in <span id="event-count">0</span> moments</p>
+      <div class="stat-row" style="margin-top:8px;">
+        <div class="stat">
+          <div class="stat__value" id="stat-events">0</div>
+          <div class="stat__label">Events</div>
+        </div>
+        <div class="stat">
+          <div class="stat__value" id="stat-hours">0</div>
+          <div class="stat__label">Hours in motion</div>
+        </div>
+        <div class="stat">
+          <div class="stat__value" id="stat-people">0</div>
+          <div class="stat__label">People</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="grid" style="gap:18px;">
+      <div class="card" id="people-card">
+        <div class="heading">The ones who showed up</div>
+        <div class="subheading" id="people-sub">Top inferred friends</div>
+        <div class="grid" style="margin-top:14px;" id="people"></div>
+      </div>
+
+      <div class="card" id="places-card">
+        <div class="heading">Your NYC footprint</div>
+        <div class="subheading">Stacked bars (default); map optional</div>
+        <div id="places-bars" style="margin-top:12px;"></div>
+        <div class="pill-row" id="cuisine-chips" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="card" id="rituals-card">
+        <div class="heading">Your rituals</div>
+        <div id="rituals-bars" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="card" id="patterns-card">
+        <div class="heading">Things you might not have noticed</div>
+        <ul class="pattern-list" style="margin-top:12px;" id="patterns"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { countUp, animateBars } from './base.js';
+
+    const DATA_URL = '/data/stats_2025.json';
+
+    fetch(DATA_URL)
+      .then((r) => r.json())
+      .then(render)
+      .catch((err) => {
+        document.body.insertAdjacentHTML('beforeend', `<p style="color:#f87171">Failed to load data: ${err}</p>`);
+      });
+
+    function render(data) {
+      renderHero(data);
+      renderPeople(data);
+      renderPlaces(data);
+      renderRituals(data);
+      renderPatterns(data);
+      requestAnimationFrame(() => animateBars('.bar-row__fill, .sparkbar__fill'));
+    }
+
+    function renderHero(data) {
+      const ts = data.time_stats || {};
+      const totalEvents = ts.total_events || 0;
+      const totalHours = ts.total_hours || 0;
+      const peopleCount = (data.inferred_friends || []).length;
+      document.getElementById('year').textContent = data.year || '—';
+      countUp(document.getElementById('event-count'), totalEvents, 900);
+      countUp(document.getElementById('stat-events'), totalEvents, 900);
+      countUp(document.getElementById('stat-hours'), Math.round(totalHours), 1100);
+      countUp(document.getElementById('stat-people'), peopleCount, 800);
+    }
+
+    function renderPeople(data) {
+      const container = document.getElementById('people');
+      container.innerHTML = '';
+      const friends = (data.inferred_friends || []).slice(0, 5);
+      if (!friends.length) {
+        document.getElementById('people-sub').textContent = 'No inferred friends yet';
+        return;
+      }
+      const maxCount = Math.max(...friends.map((f) => f.event_count || 1), 1);
+      friends.forEach((f, idx) => {
+        const pct = Math.round((f.event_count / maxCount) * 100);
+        const venues = Array.from(
+          new Set((f.events || []).map((e) => e.venue_name).filter(Boolean))
+        ).slice(0, 3);
+        const hoods = Array.from(
+          new Set((f.events || []).map((e) => e.neighborhood).filter(Boolean))
+        ).slice(0, 3);
+        const card = document.createElement('div');
+        card.className = 'person card';
+        card.style.animationDelay = `${idx * 60}ms`;
+        card.innerHTML = `
+          <div class="avatar">${(f.name || '?')[0]}</div>
+          <div>
+            <p class="person__name">${f.name || 'Unknown'}</p>
+            <p class="person__meta">${f.event_count} moments · ${f.total_hours} hours</p>
+            <div class="pill-row">
+              ${venues.map((v) => `<span class="chip chip--accent">${v}</span>`).join('')}
+              ${hoods.map((h) => `<span class="chip">${h}</span>`).join('')}
+            </div>
+            <div class="sparkbar">
+              <div class="sparkbar__fill" data-value="${pct}"></div>
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function renderPlaces(data) {
+      const bars = document.getElementById('places-bars');
+      bars.innerHTML = '';
+      const locs = data.location_stats || {};
+      const hoods = locs.top_neighborhoods || [];
+      if (!hoods.length) {
+        bars.innerHTML = '<p class="muted">No location data yet.</p>';
+      } else {
+        const max = Math.max(...hoods.map(([, count]) => count || 1), 1);
+        hoods.slice(0, 6).forEach(([name, count]) => {
+          const pct = Math.round((count / max) * 100);
+          bars.insertAdjacentHTML(
+            'beforeend',
+            `<div class="bar-row">
+              <div class="bar-row__label">${name}</div>
+              <div class="bar-row__bar"><div class="bar-row__fill" data-value="${pct}"></div></div>
+              <div class="bar-row__value">${count}</div>
+            </div>`
+          );
+        });
+      }
+
+      const chips = document.getElementById('cuisine-chips');
+      chips.innerHTML = '';
+      const cuisines = locs.top_cuisines || [];
+      cuisines.slice(0, 6).forEach(([name, count]) => {
+        const warm = ['Japanese', 'Korean', 'Thai', 'Chinese'].includes(name || '');
+        chips.insertAdjacentHTML(
+          'beforeend',
+          `<span class="chip ${warm ? 'chip--accent' : ''}">${name} · ${count}</span>`
+        );
+      });
+    }
+
+    function renderRituals(data) {
+      const container = document.getElementById('rituals-bars');
+      container.innerHTML = '';
+      const acts = data.activity_stats || {};
+      const entries = Object.values(acts).filter((a) => (a?.event_count || 0) > 0);
+      if (!entries.length) {
+        container.innerHTML = '<p class="muted">No activity data yet.</p>';
+        return;
+      }
+      const max = Math.max(...entries.map((a) => a.event_count || 1), 1);
+      entries
+        .sort((a, b) => (b.event_count || 0) - (a.event_count || 0))
+        .slice(0, 6)
+        .forEach((a) => {
+          const pct = Math.round((a.event_count / max) * 100);
+          container.insertAdjacentHTML(
+            'beforeend',
+            `<div class="bar-row">
+              <div class="bar-row__label">${a.category}</div>
+              <div class="bar-row__bar"><div class="bar-row__fill" data-value="${pct}"></div></div>
+              <div class="bar-row__value">${a.event_count}</div>
+            </div>`
+          );
+        });
+    }
+
+    function renderPatterns(data) {
+      const list = document.getElementById('patterns');
+      list.innerHTML = '';
+      list.insertAdjacentHTML(
+        'beforeend',
+        `<li class="pattern">
+          <div class="pattern__icon">ℹ️</div>
+          <div>
+            <p class="pattern__text">Patterns/streaks not generated yet.</p>
+            <p class="pattern__meta">We’ll surface streaks and shifts once Phase 3 stats land.</p>
+          </div>
+        </li>`
+      );
+    }
+  </script>
+</body>
+</html>

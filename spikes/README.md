@@ -10,6 +10,7 @@ Files:
 - `patterns.html` — Insight list with icons.
 - `narrative.html` — Typewriter narrative card (respects reduced motion).
 - `experiments.html` — Numbered CTA list.
+- `data-preview.html` — Pulls real data from `/data/stats_2025.json` into the default layout (bars for places/rituals).
 
 Shared styles/JS:
 - `base.css` — Tokens, cards, bars, chips, map styling.
