@@ -572,7 +572,6 @@ async def _call_openai_batch(
             response = await client.responses.create(
                 model=model,
                 input=prompt,
-                reasoning={"effort": "low"},
                 text={"verbosity": "low"},
                 timeout=timeout,
             )
@@ -973,7 +972,6 @@ async def _call_openai_text(client: AsyncOpenAI, prompt: str, model: str, timeou
         resp = await client.responses.create(
             model=model,
             input=prompt,
-            reasoning={"effort": "low"},
             text={"verbosity": "low"},
             timeout=timeout,
         )
