@@ -20,9 +20,12 @@ from .auth import get_calendar_service, get_user_email
 from .fetch import fetch_events_for_year
 from .models import (
     ActivityCategoryStats,
+    ExperimentIdea,
     FriendStats,
+    Insight,
     InferredFriend,
     LocationStats,
+    NarrativeOutput,
     MergeSuggestion,
     TimeStats,
 )
@@ -105,6 +108,9 @@ def run(year: int, use_cache: bool, top_n: int, enrich: bool = False) -> None:
     inferred_friends: list[InferredFriend] = []
     activity_stats: dict[str, ActivityCategoryStats] = {}
     merge_suggestions: list[MergeSuggestion] = []
+    narrative: NarrativeOutput | None = None
+    patterns: list[Insight] = []
+    experiments: list[ExperimentIdea] = []
 
     if enrich:
         if not os.environ.get("OPENAI_API_KEY"):
@@ -114,6 +120,7 @@ def run(year: int, use_cache: bool, top_n: int, enrich: bool = False) -> None:
                 apply_enrichments_to_friend_stats,
                 classify_solo_events_sync,
                 enrich_all_events_sync,
+                generate_story_and_insights_sync,
                 suggest_merges,
             )
 
@@ -134,6 +141,13 @@ def run(year: int, use_cache: bool, top_n: int, enrich: bool = False) -> None:
             # Step 5c: Suggest merges
             merge_suggestions = suggest_merges(inferred_friends, friend_stats)
 
+            # Step 5d: Narrative + patterns + experiments (stats-level LLM)
+            console.print("Generating story & patterns...", end=" ")
+            narrative, patterns, experiments = generate_story_and_insights_sync(
+                time_stats, friend_stats, inferred_friends, location_stats, activity_stats, year
+            )
+            console.print("[green]OK[/green]")
+
     # Step 6: Display results
     console.print()
     _display_wrapped(
@@ -141,7 +155,17 @@ def run(year: int, use_cache: bool, top_n: int, enrich: bool = False) -> None:
     )
 
     # Step 7: Save to JSON
-    _save_stats(friend_stats, time_stats, location_stats, inferred_friends, activity_stats, year)
+    _save_stats(
+        friend_stats,
+        time_stats,
+        location_stats,
+        inferred_friends,
+        activity_stats,
+        year,
+        narrative,
+        patterns,
+        experiments,
+    )
 
 
 def _display_wrapped(
@@ -248,6 +272,9 @@ def _save_stats(
     inferred_friends: list[InferredFriend],
     activity_stats: dict[str, ActivityCategoryStats],
     year: int,
+    narrative: NarrativeOutput | None = None,
+    patterns: list[Insight] | None = None,
+    experiments: list[ExperimentIdea] | None = None,
 ) -> None:
     """Save statistics to JSON file."""
     data_dir = Path("data")
@@ -330,6 +357,17 @@ def _save_stats(
             }
             for cat, stats in activity_stats.items()
         }
+
+    if narrative:
+        output["narrative"] = {"story": narrative.story}
+
+    if patterns:
+        output["patterns"] = [{"title": p.title, "detail": p.detail} for p in patterns]
+
+    if experiments:
+        output["experiments"] = [
+            {"title": e.title, "description": e.description} for e in experiments
+        ]
 
     output_path = data_dir / f"stats_{year}.json"
     with open(output_path, "w") as f:

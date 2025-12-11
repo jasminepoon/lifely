@@ -15,12 +15,16 @@ from openai import AsyncOpenAI
 from .models import (
     ActivityCategoryStats,
     ActivityEvent,
+    ExperimentIdea,
     FriendEvent,
     FriendStats,
+    Insight,
     InferredFriend,
     LocationEnrichment,
+    NarrativeOutput,
     MergeSuggestion,
     NormalizedEvent,
+    TimeStats,
 )
 from .places import (
     load_places_cache,
@@ -99,6 +103,8 @@ REQUEST_TIMEOUT = float(os.environ.get("LIFELY_LLM_TIMEOUT", "45"))
 LOCATION_MODEL = os.environ.get("LIFELY_LLM_LOCATION_MODEL", "gpt-5.1")
 CLASSIFICATION_MODEL = os.environ.get("LIFELY_LLM_CLASSIFICATION_MODEL", "gpt-4o-mini")
 LLM_CACHE_FILENAME = "llm_cache.json"
+NARRATIVE_MODEL = os.environ.get("LIFELY_LLM_NARRATIVE_MODEL", "gpt-5.1")
+INSIGHTS_MODEL = os.environ.get("LIFELY_LLM_INSIGHTS_MODEL", "gpt-4o-mini")
 
 
 def _shorten_text(text: str | None, max_len: int = 180) -> str:
@@ -707,12 +713,30 @@ def _data_dir() -> Path:
 def _load_llm_cache(data_dir: Path) -> dict:
     path = data_dir / LLM_CACHE_FILENAME
     if not path.exists():
-        return {"locations_by_location": {}, "classification_by_summary": {}}
+        return {
+            "locations_by_location": {},
+            "classification_by_summary": {},
+            "narrative_by_year": {},
+            "insights_by_year": {},
+            "experiments_by_year": {},
+        }
     try:
         with open(path) as f:
-            return json.load(f)
+            cache = json.load(f)
+            cache.setdefault("narrative_by_year", {})
+            cache.setdefault("insights_by_year", {})
+            cache.setdefault("experiments_by_year", {})
+            cache.setdefault("locations_by_location", {})
+            cache.setdefault("classification_by_summary", {})
+            return cache
     except Exception:
-        return {"locations_by_location": {}, "classification_by_summary": {}}
+        return {
+            "locations_by_location": {},
+            "classification_by_summary": {},
+            "narrative_by_year": {},
+            "insights_by_year": {},
+            "experiments_by_year": {},
+        }
 
 
 def _save_llm_cache(cache: dict, data_dir: Path) -> None:
@@ -743,3 +767,234 @@ def _location_enrichment_from_cache(event_id: str, cached: dict) -> LocationEnri
         latitude=cached.get("latitude"),
         longitude=cached.get("longitude"),
     )
+
+
+# ═══════════════════════════════════════════════════════════
+# STORY / INSIGHTS / EXPERIMENTS (stats-level LLM calls)
+# ═══════════════════════════════════════════════════════════
+
+
+def _stats_context_from_objects(
+    time_stats: TimeStats,
+    friend_stats: list[FriendStats],
+    inferred_friends: list[InferredFriend],
+    location_stats,
+    activity_stats: dict[str, ActivityCategoryStats],
+    year: int,
+    top_n: int = 5,
+) -> dict:
+    """Build a compact stats payload for LLM calls (keep it small)."""
+    month_names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    events_per_month = time_stats.events_per_month or {}
+    busiest_month_num = max(events_per_month, key=events_per_month.get) if events_per_month else None
+    busiest_month = month_names[busiest_month_num] if busiest_month_num else None
+    events_per_weekday = time_stats.events_per_weekday or {}
+    busiest_weekday = max(events_per_weekday, key=events_per_weekday.get) if events_per_weekday else None
+
+    def friend_payload(f: FriendStats) -> dict:
+        venues = []
+        hoods = set()
+        for e in f.events:
+            if e.venue_name and e.venue_name not in venues:
+                venues.append(e.venue_name)
+            if e.neighborhood:
+                hoods.add(e.neighborhood)
+        name = f.display_name or f.email.split("@")[0]
+        return {
+            "name": name,
+            "events": f.event_count,
+            "hours": f.total_hours,
+            "venues": venues[:3],
+            "neighborhoods": list(hoods)[:3],
+        }
+
+    def inferred_payload(f: InferredFriend) -> dict:
+        venues = []
+        hoods = set()
+        for e in f.events:
+            if e.venue_name and e.venue_name not in venues:
+                venues.append(e.venue_name)
+            if e.neighborhood:
+                hoods.add(e.neighborhood)
+        return {
+            "name": f.name,
+            "events": f.event_count,
+            "hours": f.total_hours,
+            "venues": venues[:3],
+            "neighborhoods": list(hoods)[:3],
+        }
+
+    def activity_payload(a: ActivityCategoryStats) -> dict:
+        return {
+            "category": a.category,
+            "events": a.event_count,
+            "hours": a.total_hours,
+            "top_activities": [name for name, _ in a.top_activities[:2]],
+            "top_venues": [name for name, _ in a.top_venues[:2]],
+        }
+
+    locs = location_stats or None
+
+    return {
+        "year": year,
+        "total_events": time_stats.total_events,
+        "total_hours": time_stats.total_hours,
+        "busiest_month": busiest_month,
+        "busiest_weekday": busiest_weekday,
+        "top_friends": [friend_payload(f) for f in friend_stats[:top_n]],
+        "top_inferred_friends": [inferred_payload(f) for f in inferred_friends[:top_n]],
+        "top_neighborhoods": locs.top_neighborhoods if locs else [],
+        "top_venues": locs.top_venues if locs else [],
+        "top_cuisines": locs.top_cuisines if locs else [],
+        "activities": [activity_payload(a) for a in activity_stats.values()],
+    }
+
+
+NARRATIVE_PROMPT = """You are a warm, data-grounded concierge with a wink. Write a short narrative about this person's year.
+
+Context (JSON):
+{context_json}
+
+Rules:
+- 3-5 sentences.
+- Ground every claim in provided data; do not invent specifics.
+- Reference friends, venues, neighborhoods, cuisines, and activities sparingly but specifically.
+- Keep tone warm, specific, never cringe. No emojis. No hashtags.
+
+Return ONLY the narrative text, no JSON, no preamble."""
+
+INSIGHTS_PROMPT = """You are summarizing patterns from a year of calendar stats.
+
+Context (JSON):
+{context_json}
+
+Return JSON: {{"patterns": [{{"title": "...", "detail": "..."}}]}}
+- 3 items max.
+- Each detail should be concise (under 140 chars), data-grounded.
+- Prioritize streaks, shifts (early vs late year), and notable pairs (person + neighborhood/venue).
+"""
+
+EXPERIMENTS_PROMPT = """You are suggesting forward-looking experiments for next year based on this year's stats.
+
+Context (JSON):
+{context_json}
+
+Return JSON: {{"experiments": [{{"title": "...", "description": "..."}}]}}
+- 3 items max.
+- Make suggestions specific to the data (people, cuisines, neighborhoods, activities).
+- Keep descriptions short (under 140 chars). No emojis."""
+
+
+async def generate_story_and_insights(
+    time_stats: TimeStats,
+    friend_stats: list[FriendStats],
+    inferred_friends: list[InferredFriend],
+    location_stats,
+    activity_stats: dict[str, ActivityCategoryStats],
+    year: int,
+    api_key: str | None = None,
+) -> tuple[NarrativeOutput | None, list[Insight], list[ExperimentIdea]]:
+    """Generate narrative, patterns, and experiments from stats (cached by year)."""
+    api_key = api_key or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        return None, [], []
+
+    data_dir = _data_dir()
+    cache = _load_llm_cache(data_dir)
+    year_key = str(year)
+
+    narrative_cached = cache.get("narrative_by_year", {}).get(year_key)
+    insights_cached = cache.get("insights_by_year", {}).get(year_key, [])
+    experiments_cached = cache.get("experiments_by_year", {}).get(year_key, [])
+
+    context = _stats_context_from_objects(
+        time_stats, friend_stats, inferred_friends, location_stats, activity_stats, year
+    )
+    context_json = json.dumps(context, separators=(",", ":"))
+
+    client = AsyncOpenAI(api_key=api_key)
+
+    narrative: NarrativeOutput | None = None
+    patterns: list[Insight] = [Insight(title=i.get("title", ""), detail=i.get("detail", "")) for i in insights_cached]
+    experiments: list[ExperimentIdea] = [
+        ExperimentIdea(title=e.get("title", ""), description=e.get("description", "")) for e in experiments_cached
+    ]
+
+    if not narrative_cached:
+        narrative_text = await _call_openai_text(client, NARRATIVE_PROMPT.format(context_json=context_json), NARRATIVE_MODEL)
+        if narrative_text:
+            cache["narrative_by_year"][year_key] = narrative_text
+            narrative = NarrativeOutput(story=narrative_text.strip())
+    else:
+        narrative = NarrativeOutput(story=narrative_cached)
+
+    if not insights_cached:
+        patterns_json = await _call_openai_json(
+            client, INSIGHTS_PROMPT.format(context_json=context_json), INSIGHTS_MODEL, key="patterns"
+        )
+        if patterns_json:
+            cache["insights_by_year"][year_key] = patterns_json
+            patterns = [Insight(title=i.get("title", ""), detail=i.get("detail", "")) for i in patterns_json]
+
+    if not experiments_cached:
+        experiments_json = await _call_openai_json(
+            client, EXPERIMENTS_PROMPT.format(context_json=context_json), INSIGHTS_MODEL, key="experiments"
+        )
+        if experiments_json:
+            cache["experiments_by_year"][year_key] = experiments_json
+            experiments = [
+                ExperimentIdea(title=e.get("title", ""), description=e.get("description", ""))
+                for e in experiments_json
+            ]
+
+    _save_llm_cache(cache, data_dir)
+    return narrative, patterns, experiments
+
+
+def generate_story_and_insights_sync(
+    time_stats: TimeStats,
+    friend_stats: list[FriendStats],
+    inferred_friends: list[InferredFriend],
+    location_stats,
+    activity_stats: dict[str, ActivityCategoryStats],
+    year: int,
+    api_key: str | None = None,
+) -> tuple[NarrativeOutput | None, list[Insight], list[ExperimentIdea]]:
+    """Sync wrapper."""
+    return asyncio.run(
+        generate_story_and_insights(
+            time_stats, friend_stats, inferred_friends, location_stats, activity_stats, year, api_key
+        )
+    )
+
+
+async def _call_openai_text(client: AsyncOpenAI, prompt: str, model: str, timeout: float = REQUEST_TIMEOUT) -> str:
+    try:
+        resp = await client.responses.create(
+            model=model,
+            input=prompt,
+            reasoning={"effort": "low"},
+            text={"verbosity": "low"},
+            timeout=timeout,
+        )
+        return (resp.output_text or "").strip()
+    except Exception:
+        return ""
+
+
+async def _call_openai_json(
+    client: AsyncOpenAI, prompt: str, model: str, key: str, timeout: float = REQUEST_TIMEOUT
+) -> list[dict] | None:
+    text = await _call_openai_text(client, prompt, model, timeout)
+    if not text:
+        return None
+    json_str = text
+    if "```json" in text:
+        json_str = text.split("```json")[1].split("```")[0].strip()
+    elif "```" in text:
+        json_str = text.split("```")[1].split("```")[0].strip()
+    try:
+        data = json.loads(json_str)
+        return data.get(key, [])
+    except Exception:
+        return None

@@ -166,6 +166,29 @@ class LocationEnrichment:
     longitude: float | None = None
 
 
+@dataclass
+class NarrativeOutput:
+    """LLM-generated narrative for the year."""
+
+    story: str
+
+
+@dataclass
+class Insight:
+    """Short insight/pattern from stats."""
+
+    title: str
+    detail: str
+
+
+@dataclass
+class ExperimentIdea:
+    """Forward-looking suggestion."""
+
+    title: str
+    description: str
+
+
 # ═══════════════════════════════════════════════════════════
 # SOLO EVENT CLASSIFICATION (Phase 2)
 # ═══════════════════════════════════════════════════════════
