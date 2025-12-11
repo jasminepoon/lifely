@@ -97,11 +97,11 @@ Return JSON: {{"results": [
 """
 
 
-BATCH_SIZE = 50  # Events per API call
-MAX_CONCURRENT_BATCHES = int(os.environ.get("LIFELY_LLM_MAX_CONCURRENCY", "4"))
-REQUEST_TIMEOUT = float(os.environ.get("LIFELY_LLM_TIMEOUT", "45"))
+BATCH_SIZE = int(os.environ.get("LIFELY_LLM_BATCH_SIZE", "30"))  # Events per API call
+MAX_CONCURRENT_BATCHES = int(os.environ.get("LIFELY_LLM_MAX_CONCURRENCY", "1"))
+REQUEST_TIMEOUT = float(os.environ.get("LIFELY_LLM_TIMEOUT", "90"))
 LOCATION_MODEL = os.environ.get("LIFELY_LLM_LOCATION_MODEL", "gpt-5.1")
-CLASSIFICATION_MODEL = os.environ.get("LIFELY_LLM_CLASSIFICATION_MODEL", "gpt-4o-mini")
+CLASSIFICATION_MODEL = os.environ.get("LIFELY_LLM_CLASSIFICATION_MODEL", "gpt-5.1")
 LLM_CACHE_FILENAME = "llm_cache.json"
 NARRATIVE_MODEL = os.environ.get("LIFELY_LLM_NARRATIVE_MODEL", "gpt-5.1")
 INSIGHTS_MODEL = os.environ.get("LIFELY_LLM_INSIGHTS_MODEL", "gpt-4o-mini")
@@ -566,6 +566,7 @@ async def _call_openai_batch(
 ) -> list:
     """Call OpenAI for a single batch of events with retry logic."""
     prompt = prompt_template.format(events_json=json.dumps(events, separators=(",", ":")))
+    last_error: Exception | None = None
 
     for attempt in range(max_retries):
         try:
@@ -593,14 +594,19 @@ async def _call_openai_batch(
                 return []
 
         except Exception as e:
-            error_str = str(e)
-            if "429" in error_str or "rate_limit" in error_str.lower():
+            last_error = e
+            error_str = str(e).lower()
+            is_rate_limit = "429" in error_str or "rate_limit" in error_str
+            is_timeout = "timeout" in error_str or "timed out" in error_str
+            if is_rate_limit or is_timeout:
                 # Exponential backoff: 5s, 10s, 20s, 40s, 80s
                 wait_time = 5 * (2 ** attempt)
                 await asyncio.sleep(wait_time)
                 continue
             raise
 
+    if last_error:
+        raise last_error
     return []  # All retries failed
 
 
