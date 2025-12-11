@@ -190,7 +190,7 @@ Output to `data/summary_2025.json`.
 #### Updated TODOs (2025-12-11)
 
 - [ ] Implement the full summary schema (median duration, streaks, time buckets, context tags).
-- [ ] Build the prompt generator that emits `prompt_{year}.txt`.
+- [ ] Build the prompt generator that emits `prompt_{year}.txt` (even though we now call LLM directly for narrative/patterns/experiments).
 - [ ] Add regression tests for timezone parsing, classification caching, and Places/LLM fallbacks.
 - [ ] Consider opt-in throttling/filters so LLM payloads stay small on large calendars.
 
