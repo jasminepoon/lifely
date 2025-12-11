@@ -153,6 +153,7 @@ async def enrich_all_events(
     seen_locations: dict[str, list[str]] = {}  # location -> [event_ids]
     unique_events = []
     event_location_lookup: dict[str, str] = {}
+    unique_locations: list[str] = []
 
     for e in events:
         if not e.location_raw:
@@ -177,6 +178,7 @@ async def enrich_all_events(
 
         if loc not in seen_locations:
             seen_locations[loc] = []
+            unique_locations.append(loc)
             unique_events.append(
                 {
                     "event_id": e.id,
@@ -222,6 +224,58 @@ async def enrich_all_events(
                     latitude=template.latitude,
                     longitude=template.longitude,
                 )
+
+    # Fill in lat/lng via Places for address-like strings (not just Maps URLs)
+    if maps_api_key:
+        for loc in unique_locations:
+            cached = location_cache.get(loc, {})
+            if cached.get("latitude") is not None and cached.get("longitude") is not None:
+                continue
+            low = loc.lower()
+            if low.startswith(("http://", "https://")):
+                continue
+            if any(bad in low for bad in ("zoom", "google meet", "meet link", "see attached")):
+                continue
+            resolved = resolve_place_from_location_string(loc, maps_api_key, places_cache)
+            if not resolved:
+                continue
+
+            # Merge into cache
+            cached.update(
+                {
+                    "venue_name": cached.get("venue_name") or resolved.venue_name,
+                    "neighborhood": cached.get("neighborhood") or resolved.neighborhood,
+                    "city": cached.get("city") or resolved.city,
+                    "cuisine": cached.get("cuisine") or resolved.cuisine,
+                    "latitude": resolved.latitude,
+                    "longitude": resolved.longitude,
+                }
+            )
+            location_cache[loc] = cached
+
+            # Patch existing enrichments for all events at this location
+            for eid in seen_locations.get(loc, []):
+                enr = enrichment_lookup.get(eid)
+                if enr:
+                    if enr.latitude is None:
+                        enr.latitude = resolved.latitude
+                        enr.longitude = resolved.longitude
+                    if not enr.neighborhood and resolved.neighborhood:
+                        enr.neighborhood = resolved.neighborhood
+                    if not enr.city and resolved.city:
+                        enr.city = resolved.city
+                    if not enr.cuisine and resolved.cuisine:
+                        enr.cuisine = resolved.cuisine
+                else:
+                    enrichment_lookup[eid] = LocationEnrichment(
+                        event_id=eid,
+                        venue_name=resolved.venue_name,
+                        neighborhood=resolved.neighborhood,
+                        city=resolved.city,
+                        cuisine=resolved.cuisine,
+                        latitude=resolved.latitude,
+                        longitude=resolved.longitude,
+                    )
 
     _save_llm_cache(llm_cache, data_dir)
     save_places_cache(places_cache, data_dir)
