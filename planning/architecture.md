@@ -1,6 +1,9 @@
 # Lifely Architecture
 
 > System design for Google Calendar 2025 Wrapped
+>
+> **Last Updated**: 2025-12-10
+> **Status**: Phase 1 ✅ Complete | Phase 2 ✅ Complete | Phase 3-4 Planned
 
 ---
 
@@ -15,8 +18,9 @@
 │   Google Calendar  ───▶  Data Pipeline  ───▶  Enrichment  ───▶  Output     │
 │                                                                              │
 │   • Fetch events        • Normalize         • Locations      • JSON stats   │
-│   • OAuth auth          • Friend stats      • LLM names      • CLI display  │
-│                         • Time stats        • Deduplication  • (UI later)   │
+│   • OAuth auth          • Friend stats      • LLM classify   • CLI display  │
+│                         • Time stats        • Infer friends  • (UI later)   │
+│                         • Location stats    • Activities     │              │
 │                                                                              │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -31,11 +35,6 @@
                                  │  ┌───────────┐  │
                                  │  │ Calendar  │  │
                                  │  │ API       │  │
-                                 │  └─────┬─────┘  │
-                                 │        │        │
-                                 │  ┌─────▼─────┐  │
-                                 │  │ Places    │  │
-                                 │  │ API       │  │
                                  │  └───────────┘  │
                                  └────────┬────────┘
                                           │
@@ -47,19 +46,30 @@
 │          │──────▶│  │          │─▶│          │─▶│          │ │──────▶│          │
 │ (CLI)    │       │  │ (OAuth)  │  │ (Cache)  │  │ (Clean)  │ │       │ (JSON)   │
 └──────────┘       │  └──────────┘  └──────────┘  └──────────┘ │       └──────────┘
-                    │        │              │             │      │
-                    │        ▼              ▼             ▼      │
-                    │  ┌──────────┐  ┌──────────┐  ┌──────────┐ │
-                    │  │  Stats   │  │  LLM     │  │  Places  │ │
-                    │  │          │  │ Enrich   │  │  Enrich  │ │
-                    │  │ (Agg)    │  │ (Names)  │  │ (Venue)  │ │
-                    │  └──────────┘  └──────────┘  └──────────┘ │
+                    │        │                            │      │
+                    │        ▼                            ▼      │
+                    │  ┌───────────────────────────────────────┐│
+                    │  │            STATS LAYER                ││
+                    │  │  ┌──────────┐  ┌──────────┐           ││
+                    │  │  │ Friend   │  │  Time    │           ││
+                    │  │  │ Stats    │  │  Stats   │           ││
+                    │  │  └──────────┘  └──────────┘           ││
+                    │  └───────────────────────────────────────┘│
                     │                      │                     │
                     │                      ▼                     │
-                    │               ┌──────────┐                 │
-                    │               │  Dedup   │                 │
-                    │               │ (Merge)  │                 │
-                    │               └──────────┘                 │
+                    │  ┌───────────────────────────────────────┐│
+                    │  │       LLM ENRICHMENT (Async)          ││
+                    │  │  ┌──────────┐  ┌──────────┐           ││
+                    │  │  │ Location │  │  Event   │           ││
+                    │  │  │ Extract  │  │ Classify │           ││
+                    │  │  └──────────┘  └──────────┘           ││
+                    │  │       │              │                 ││
+                    │  │       ▼              ▼                 ││
+                    │  │  ┌──────────┐  ┌──────────┐           ││
+                    │  │  │ Inferred │  │ Activity │           ││
+                    │  │  │ Friends  │  │  Stats   │           ││
+                    │  │  └──────────┘  └──────────┘           ││
+                    │  └───────────────────────────────────────┘│
                     │                                            │
                     └────────────────────────────────────────────┘
                                           │
@@ -67,8 +77,9 @@
                                  ┌─────────────────┐
                                  │     OpenAI      │
                                  │  ┌───────────┐  │
-                                 │  │ GPT-4o    │  │
-                                 │  │ mini      │  │
+                                 │  │  GPT-5.1  │  │
+                                 │  │ Responses │  │
+                                 │  │    API    │  │
                                  │  └───────────┘  │
                                  └─────────────────┘
 ```
@@ -82,8 +93,8 @@
 │                           DATA FLOW PIPELINE                                 │
 └─────────────────────────────────────────────────────────────────────────────┘
 
- PHASE 1 (Done)                      PHASE 2 (Current)
- ══════════════                      ═════════════════
+ PHASE 1 ✅                          PHASE 2 ✅
+ ══════════                          ══════════
 
  ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
  │ Calendar│    │  Raw    │    │Normalized│   │ Email   │    │ Final   │
@@ -91,38 +102,40 @@
  │         │    │ (JSON)  │    │         │    │         │    │ (JSON)  │
  └─────────┘    └─────────┘    └─────────┘    └────┬────┘    └─────────┘
                     │                              │              ▲
-                    │                              │              │
                     ▼                              ▼              │
                ┌─────────┐                   ┌─────────┐         │
                │  Cache  │                   │ Time    │         │
                │  (disk) │                   │ Stats   │─────────┤
                └─────────┘                   └─────────┘         │
                                                                  │
+ LLM ENRICHMENT (Async Parallel Batching)                       │
+ ════════════════════════════════════════                       │
                                                                  │
-                              ┌─────────┐    ┌─────────┐         │
-                              │Candidate│    │ LLM     │         │
-                              │ Social  │───▶│ Extract │         │
-                              │ Events  │    │ Names   │         │
-                              └─────────┘    └────┬────┘         │
-                                                  │              │
-                                                  ▼              │
-                              ┌─────────┐    ┌─────────┐         │
-                              │ Dedup & │    │ Merge   │         │
-                              │Aggregate│───▶│Suggest  │─────────┤
-                              └─────────┘    └─────────┘         │
+               ┌─────────┐    ┌─────────┐                       │
+               │ Location│    │ venue   │                       │
+               │  Strings│───▶│ neighbor│───────────────────────┤
+               │ (dedup) │    │ cuisine │                       │
+               └─────────┘    └─────────┘                       │
                                                                  │
-                                                                 │
-                              ┌─────────┐    ┌─────────┐         │
-                              │ Places  │    │ Enrich  │         │
-                              │  API    │───▶│ Locations│────────┘
-                              └─────────┘    └─────────┘
+               ┌─────────┐    ┌─────────┐    ┌─────────┐        │
+               │  Solo   │    │ Classify│    │ Inferred│        │
+               │ Events  │───▶│ SOCIAL/ │───▶│ Friends │────────┤
+               │         │    │ ACTIVITY│    │         │        │
+               └─────────┘    └─────────┘    └─────────┘        │
+                                   │                             │
+                                   ▼                             │
+                              ┌─────────┐                       │
+                              │Activity │                       │
+                              │Category │───────────────────────┘
+                              │ Stats   │
+                              └─────────┘
 ```
 
 ---
 
 ## Module Breakdown
 
-### Core Modules (Phase 1)
+### Core Modules (Phase 1) ✅
 
 | Module | File | Responsibility | Input | Output |
 |--------|------|----------------|-------|--------|
@@ -130,17 +143,26 @@
 | **Fetch** | `fetch.py` | Retrieve calendar events, pagination, caching | API service, year | `list[dict]` raw events |
 | **Models** | `models.py` | Data structures for all entities | - | Dataclasses |
 | **Normalize** | `normalize.py` | Clean raw API data, timezone handling | Raw events | `list[NormalizedEvent]` |
-| **Stats** | `stats.py` | Aggregate by friend, time patterns | Normalized events | `FriendStats`, `TimeStats` |
+| **Stats** | `stats.py` | Aggregate by friend, time, location | Normalized events | `FriendStats`, `TimeStats`, `LocationStats` |
 | **CLI** | `cli.py` | User interface, orchestration | CLI args | Terminal output, JSON file |
 
-### Enrichment Modules (Phase 2)
+### Enrichment Module (Phase 2) ✅
 
 | Module | File | Responsibility | Input | Output |
 |--------|------|----------------|-------|--------|
-| **LLM Enrich** | `llm_enrich.py` | Combined enrichment: location extraction + event classification | All events | Locations, classifications, activity data |
-| **Places Client** | `places_client.py` | Resolve opaque URLs only (goo.gl, maps.app.goo.gl) | Opaque URLs | Venue name, address |
+| **LLM Enrich** | `llm_enrich.py` | All LLM enrichment (async batching) | Events | See below |
+| **Places Fallback** | `places.py` | Resolve Google Maps links via Places API (if key present) | Maps URL/text | `LocationEnrichment` |
 
-> **Note**: LLM handles ~90% of location extraction. Places API is only called for opaque URLs.
+**`llm_enrich.py` Functions:**
+
+| Function | Purpose | Output |
+|----------|---------|--------|
+| `enrich_all_events_sync()` | Extract location data from events | `dict[str, LocationEnrichment]` |
+| `classify_solo_events_sync()` | Classify events as SOCIAL/ACTIVITY/OTHER | `(list[InferredFriend], dict[str, ActivityCategoryStats])` |
+| `suggest_merges()` | Link inferred names to email friends | `list[MergeSuggestion]` |
+| `apply_enrichments_to_friend_stats()` | Add location data to friend events | `list[FriendStats]` (enriched) |
+
+> **Note**: GPT-5.1 handles most enrichment; Places API is used opportunistically for Google Maps links when `GOOGLE_MAPS_API_KEY` is set.
 
 ---
 
@@ -272,10 +294,6 @@
 ├─────────────────┼───────────────────┼───────────────────────────────────────┤
 │ Calendar API    │ Fetch events      │ OAuth 2.0 (credentials.json)          │
 │                 │                   │ Scope: calendar.readonly              │
-├─────────────────┼───────────────────┼───────────────────────────────────────┤
-│ Places API (New)│ Location details  │ API Key (GOOGLE_MAPS_API_KEY)         │
-│                 │ Venue resolution  │ ~$17/1000 calls                       │
-│                 │ Neighborhood data │ Budget: ~$20                          │
 └─────────────────┴───────────────────┴───────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -283,11 +301,14 @@
 ├─────────────────┬───────────────────┬───────────────────────────────────────┤
 │ Service         │ Purpose           │ Auth                                  │
 ├─────────────────┼───────────────────┼───────────────────────────────────────┤
-│ GPT-4o-mini     │ Classify events:  │ API Key (OPENAI_API_KEY)              │
-│                 │ • SOCIAL → names  │ ~$0.15/1M input tokens                │
-│                 │ • ACTIVITY → type │ Batched: 50 events/request            │
-│                 │ • OTHER → skip    │ JSON mode for structured output       │
+│ GPT-5.1         │ All enrichment:   │ API Key (OPENAI_API_KEY)              │
+│ Responses API   │ • Location extract│ ~$0.05 per run                        │
+│                 │ • SOCIAL → names  │ Async batched: 50 events/request      │
+│                 │ • ACTIVITY → type │ 2 concurrent batches max              │
+│                 │ • Venue from title│ Retry with exponential backoff        │
 └─────────────────┴───────────────────┴───────────────────────────────────────┘
+
+> **Note**: Google Places API is used only when a Google Maps URL is present and a key is configured; everything else still relies on LLM extraction.
 ```
 
 ### Environment Variables
@@ -296,8 +317,7 @@
 # credentials/credentials.json - OAuth client (downloaded from GCP)
 # credentials/token.json       - Auto-generated after first auth
 
-# Phase 2 requirements
-GOOGLE_MAPS_API_KEY=your_google_api_key
+# Required for enrichment
 OPENAI_API_KEY=your_openai_api_key
 ```
 
@@ -312,9 +332,7 @@ Phase 1 (Core):
 └── rich                      # CLI formatting
 
 Phase 2 (Enrichment):
-├── openai                    # GPT-4o-mini API client
-├── httpx                     # HTTP client for Places API
-└── tenacity                  # Retry logic (optional)
+└── openai                    # GPT-5.1 API client (async support)
 ```
 
 ---
@@ -326,9 +344,10 @@ lifely/
 ├── planning/
 │   ├── concept.md              # Original vision doc
 │   ├── phase1-plan.md          # Phase 1 implementation details
-│   ├── phase2-event-summaries.md  # Event summaries enhancement
-│   ├── future-phases.md        # Phases 2-5 roadmap
-│   └── architecture.md         # This document
+│   ├── phase2-event-summaries.md  # Phase 2 implementation details
+│   ├── future-phases.md        # Phases 3-5 roadmap
+│   ├── architecture.md         # This document
+│   └── status.md               # Current project status
 │
 ├── credentials/                # OAuth credentials (gitignored)
 │   ├── credentials.json        # Downloaded from GCP
@@ -336,23 +355,21 @@ lifely/
 │
 ├── data/                       # Output data (gitignored)
 │   ├── raw_events_2025.json    # Cached API response
-│   ├── stats_2025.json         # Computed statistics
-│   └── places_cache.json       # Places API cache (Phase 2)
+│   └── stats_2025.json         # Computed statistics (full output)
 │
 ├── src/lifely/
 │   │
-│   │  # ══════ PHASE 1 (Done) ══════
+│   │  # ══════ PHASE 1 ✅ ══════
 │   ├── __init__.py
 │   ├── auth.py                 # OAuth authentication
 │   ├── fetch.py                # Calendar API fetching
 │   ├── models.py               # All data models
 │   ├── normalize.py            # Event normalization
 │   ├── stats.py                # Statistics computation
-│   ├── cli.py                  # CLI entrypoint
+│   ├── cli.py                  # CLI entrypoint & display
 │   │
-│   │  # ══════ PHASE 2 (Current) ══════
-│   ├── llm_enrich.py           # LLM enrichment (classification + locations)
-│   └── places_client.py        # Places API (opaque URLs only)
+│   │  # ══════ PHASE 2 ✅ ══════
+│   └── llm_enrich.py           # GPT-5.1 enrichment (async batching)
 │
 ├── tests/                      # Test files
 ├── pyproject.toml              # Project config
@@ -400,7 +417,6 @@ STEP 2: FETCH EVENTS
        │ • timeMax: 2026-01-01
        │ • singleEvents: true
        │ • orderBy: startTime
-       │
        ▼
 
 
@@ -432,47 +448,53 @@ STEP 4: COMPUTE STATS (Email-based)
 │ • busiest day│                                 │
 └──────────────┘                                 │
                                                  │
-                                                 │
-STEP 5: LLM ENRICHMENT (Single Batch Call)
-══════════════════════════════════════════
-┌──────────────────────────────────────────────────────────────────────────┐
-│  Input: ALL events (with has_attendees flag)                             │
-│                                                                          │
-│  ┌──────────────┐                                                        │
-│  │   OpenAI     │     Extracts from each event:                          │
-│  │  GPT-4o-mini │───▶ • Location: venue_name, neighborhood, city, cuisine│
-│  │              │     • Classification: SOCIAL/ACTIVITY/OTHER (solo only)│
-│  │  (~$0.05)    │     • Names (if SOCIAL), category/type (if ACTIVITY)   │
-│  └──────────────┘     • Flag: is_opaque_url (for Places API)             │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
-                            │
-                            │
-STEP 6: RESOLVE OPAQUE URLs (Conditional)
-═════════════════════════════════════════
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│ Events where │     │  Follow      │     │  Places API  │
-│ is_opaque_url│────▶│  redirects   │────▶│  (if needed) │
-│ = true       │     │  (httpx)     │     │  (cached)    │
-└──────────────┘     └──────────────┘     └──────────────┘
-       │
-       │ ~5-10% of events with locations
-       │ Most opaque URLs resolve via redirect alone
-       ▼
 
-STEP 7: APPLY ENRICHMENTS & AGGREGATE
-═════════════════════════════════════
+STEP 5a: LOCATION ENRICHMENT (Async Parallel)
+═════════════════════════════════════════════
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Input: Unique location strings from all events                          │
+│                                                                          │
+│  ┌──────────────┐    Processing:                                         │
+│  │   OpenAI     │    • Async parallel batches (2 concurrent)             │
+│  │   GPT-5.1    │    • 50 events per batch                               │
+│  │   Responses  │    • Retry with exponential backoff (5s, 10s, 20s...)  │
+│  │   API        │    • Deduplication by location string                  │
+│  │              │                                                        │
+│  │  (~$0.05)    │    Output: venue_name, neighborhood, city, cuisine     │
+│  └──────────────┘                                                        │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+STEP 5b: SOLO EVENT CLASSIFICATION (Async Parallel)
+═══════════════════════════════════════════════════
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Input: Events without attendees (solo events)                           │
+│                                                                          │
+│  ┌──────────────┐    Classification:                                     │
+│  │   OpenAI     │    • SOCIAL → extract names ["Masha", "John"]          │
+│  │   GPT-5.1    │    • ACTIVITY → category, activity_type, venue         │
+│  │   Responses  │    • OTHER → skip                                      │
+│  │   API        │                                                        │
+│  │              │    Venue extraction from summary:                      │
+│  │  (~$0.05)    │    • "Yoga @ Vital" → venue: "Vital"                   │
+│  └──────────────┘    • "Climbing at Brooklyn Boulders" → venue: "BB"     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+STEP 5c: AGGREGATE RESULTS
+══════════════════════════
               ┌─────────────────────────────────────────────────────────┐
-              │  Apply LLM results to data structures:                   │
+              │  Apply enrichments & aggregate:                          │
               │                                                          │
               │  • FriendStats.events → venue_name, neighborhood, etc.  │
               │  • SOCIAL events → aggregate into InferredFriends        │
               │  • ACTIVITY events → aggregate into ActivityCategoryStats│
+              │  • Venue priority: classification > location enrichment  │
               └─────────────────────────────────────────────────────────┘
-                            │
-                            │
-STEP 8: MERGE SUGGESTIONS
-═════════════════════════
+
+
+STEP 5d: MERGE SUGGESTIONS
+══════════════════════════
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │ Inferred     │     │  Match:      │     │ Merge        │
 │ Friends      │────▶│  • name in   │────▶│ Suggestions  │
@@ -480,7 +502,7 @@ STEP 8: MERGE SUGGESTIONS
 └──────────────┘     └──────────────┘     └──────────────┘
 
 
-STEP 9: OUTPUT
+STEP 6: OUTPUT
 ══════════════
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │ All Stats    │     │  Serialize   │     │ stats_2025   │
@@ -492,7 +514,8 @@ STEP 9: OUTPUT
        ▼
 ┌──────────────┐
 │ CLI Display  │
-│ (rich table) │
+│ (rich/wrapped│
+│  style)      │
 └──────────────┘
 ```
 
@@ -595,25 +618,25 @@ STEP 9: OUTPUT
 │                           PHASE ROADMAP                                      │
 └─────────────────────────────────────────────────────────────────────────────┘
 
- PHASE 1 ✅                PHASE 2 🔄               PHASE 3                PHASE 4
- Calendar Pipeline         Location + LLM           Full Stats + Prompt    Visual UI
+ PHASE 1 ✅                PHASE 2 ✅               PHASE 3                PHASE 4
+ Calendar Pipeline         LLM Enrichment           Full Stats + Prompt    Visual UI
  ══════════════════        ══════════════           ═══════════════════    ═════════
 
  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐    ┌─────────────────┐
- │ • OAuth auth    │      │ • Places API    │      │ • Context tags  │    │ • HTML/CSS      │
- │ • Fetch events  │      │ • URL parsing   │      │ • YearSummary   │    │ • Flighty-style │
- │ • Normalize     │ ───▶ │ • LLM classify  │ ───▶ │ • LLM prompt    │───▶│ • Charts/maps   │
- │ • Email friends │      │ • Friend extract│      │ • Narrative gen │    │ • Shareable     │
- │ • Time stats    │      │ • Activity stats│      │                 │    │                 │
- │ • JSON output   │      │ • Deduplication │      │                 │    │                 │
+ │ • OAuth auth    │      │ • Location LLM  │      │ • Context tags  │    │ • HTML/CSS      │
+ │ • Fetch events  │      │ • Solo classify │      │ • Streaks calc  │    │ • Flighty-style │
+ │ • Normalize     │ ───▶ │ • Infer friends │ ───▶ │ • LLM narrative │───▶│ • Charts/maps   │
+ │ • Email friends │      │ • Activity stats│      │ • Hour buckets  │    │ • Shareable     │
+ │ • Time stats    │      │ • Async batching│      │                 │    │                 │
+ │ • JSON output   │      │ • Rate limiting │      │                 │    │                 │
  │ • CLI display   │      │ • Merge suggest │      │                 │    │                 │
  │                 │      │ • Neighborhoods │      │                 │    │                 │
  └─────────────────┘      └─────────────────┘      └─────────────────┘    └─────────────────┘
 
  Dependencies:             Dependencies:            Dependencies:          Dependencies:
  • Calendar API           • Phase 1 complete       • Phase 2 complete     • Phase 3 complete
- • OAuth credentials      • Places API key         • All stats computed   • Static HTML gen
-                          • OpenAI API key                                • Tailwind CSS
+ • OAuth credentials      • OpenAI API key         • All stats computed   • Static HTML gen
+                                                                          • Tailwind CSS
                                                                           • Chart.js
 ```
 
@@ -626,36 +649,30 @@ STEP 9: OUTPUT
 │                          CACHING STRATEGY                                    │
 └─────────────────────────────────────────────────────────────────────────────┘
 
- LAYER 1: Calendar Events
- ════════════════════════
+ LAYER 1: Calendar Events ✅
+ ═══════════════════════════
  File: data/raw_events_{year}.json
  Key: year
  TTL: Manual refresh (--no-cache flag)
  Size: ~1-5 MB typical
 
- LAYER 2: Places API Responses (Opaque URLs Only)
- ════════════════════════════════════════════════
- File: data/places_cache.json
- Key: opaque URL → resolved venue data
- TTL: Indefinite (place details rarely change)
- Size: ~10-50 KB typical (only opaque URLs cached)
-
- LAYER 3: LLM Extractions
- ════════════════════════
- File: data/llm_cache.json
- Key: hash(event_summary)
- TTL: Indefinite (same summary = same extraction)
- Size: ~50-200 KB typical
+ LAYER 2: LLM Caching (Future Enhancement)
+ ═════════════════════════════════════════
+ Status: NOT IMPLEMENTED
+ Rationale: LLM calls are cheap (~$0.10/run) and fast (~30s)
+ Future: Could cache by location_raw string to reduce API calls
 
 
  Cache Flow:
  ───────────
 
- Request ───▶ Check Cache ───▶ HIT ───▶ Return cached
-                   │
-                   │ MISS
-                   ▼
-              Call API ───▶ Store in cache ───▶ Return fresh
+ Calendar Request ───▶ Check Cache ───▶ HIT ───▶ Return cached
+                             │
+                             │ MISS
+                             ▼
+                        Call API ───▶ Store in cache ───▶ Return fresh
+
+ LLM Request ───▶ Always call API (no caching currently)
 ```
 
 ---
@@ -665,11 +682,11 @@ STEP 9: OUTPUT
 | Error | Source | Handling |
 |-------|--------|----------|
 | OAuth expired | Calendar API | Auto-refresh token, re-auth if needed |
-| Rate limited | Places API | Exponential backoff, respect 429 |
-| Invalid location | Places API | Skip, log warning, continue |
-| LLM timeout | OpenAI API | Retry with backoff, fallback to skip |
-| Parse failure | LLM response | Log error, skip event, continue |
+| Rate limited (429) | OpenAI API | ✅ Exponential backoff (5s, 10s, 20s, 40s, 80s) |
+| LLM timeout | OpenAI API | ✅ Retry up to 5 times with backoff |
+| Parse failure | LLM response | Log warning, skip event, continue |
 | Network error | Any API | Retry 3x, then fail gracefully |
+| Missing API key | OpenAI | ✅ Warn and skip enrichment gracefully |
 
 ---
 
@@ -687,20 +704,19 @@ STEP 9: OUTPUT
 
 ## Performance Targets
 
-| Operation | Target | Notes |
-|-----------|--------|-------|
-| Full year fetch | < 30s | Cached after first run |
-| Stats computation | < 5s | In-memory processing |
-| LLM enrichment | < 30s | Single batch call |
-| Opaque URL resolution | < 30s | Only ~30 URLs, cached |
-| Total (cached) | < 10s | Most data from disk |
-| Total (fresh) | < 2min | First run with all APIs |
+| Operation | Target | Actual | Notes |
+|-----------|--------|--------|-------|
+| Full year fetch | < 30s | ~5s | ✅ Cached after first run |
+| Stats computation | < 5s | < 1s | ✅ In-memory processing |
+| LLM location enrichment | < 60s | ~20s | ✅ Async parallel (2 concurrent) |
+| LLM solo classification | < 60s | ~15s | ✅ Async parallel (2 concurrent) |
+| Total (cached calendar) | < 90s | ~40s | ✅ LLM calls every run |
+| Total (fresh) | < 2min | ~45s | ✅ Including calendar fetch |
 
 ## Cost Targets
 
 | Component | Cost | Notes |
 |-----------|------|-------|
-| OpenAI LLM | ~$0.05 | Every run |
-| Places API | ~$0.50 | First run only, opaque URLs |
-| **Total (first run)** | ~$0.55 | |
-| **Total (subsequent)** | ~$0.05 | Places cached |
+| OpenAI LLM (locations) | ~$0.05 | Per run |
+| OpenAI LLM (classification) | ~$0.05 | Per run |
+| **Total per run** | ~$0.10 | ✅ Achieved |

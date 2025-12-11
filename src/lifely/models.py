@@ -134,3 +134,118 @@ class TimeStats:
     events_per_weekday: dict[str, int]
     hours_per_month: dict[int, float]
     busiest_day: tuple[str, int, float] | None = None
+
+
+@dataclass
+class LocationStats:
+    """Location-based statistics aggregated from friend events.
+
+    Attributes:
+        top_neighborhoods: List of (neighborhood, count) tuples.
+        top_venues: List of (venue_name, count) tuples.
+        top_cuisines: List of (cuisine, count) tuples.
+        total_with_location: Count of events with location data.
+    """
+
+    top_neighborhoods: list[tuple[str, int]]
+    top_venues: list[tuple[str, int]]
+    top_cuisines: list[tuple[str, int]]
+    total_with_location: int
+
+
+@dataclass
+class LocationEnrichment:
+    """Resolved location details for an event."""
+
+    event_id: str = ""
+    venue_name: str | None = None
+    neighborhood: str | None = None
+    city: str | None = None
+    cuisine: str | None = None
+
+
+# ═══════════════════════════════════════════════════════════
+# SOLO EVENT CLASSIFICATION (Phase 2)
+# ═══════════════════════════════════════════════════════════
+
+
+@dataclass
+class InferredFriend:
+    """Friend inferred from event summaries via LLM (no email).
+
+    Attributes:
+        name: Display name as extracted (e.g., "Masha").
+        normalized_name: Lowercase key for deduplication.
+        event_count: Number of events with this person.
+        total_hours: Total hours from events.
+        events: List of events with this person.
+        linked_email: Email if merged with email-based friend.
+    """
+
+    name: str
+    normalized_name: str
+    event_count: int
+    total_hours: float
+    events: list[FriendEvent] = field(default_factory=list)
+    linked_email: str | None = None
+
+
+@dataclass
+class ActivityEvent:
+    """A personal activity event (fitness, wellness, etc.).
+
+    Attributes:
+        id: Event ID.
+        summary: Event title.
+        date: Event date (YYYY-MM-DD).
+        hours: Duration in hours.
+        category: Activity category (fitness, wellness, health, etc.).
+        activity_type: Specific activity (yoga, gym, therapy, etc.).
+        venue_name: Venue if available.
+        neighborhood: Neighborhood if available.
+    """
+
+    id: str
+    summary: str | None
+    date: str
+    hours: float
+    category: str
+    activity_type: str
+    venue_name: str | None = None
+    neighborhood: str | None = None
+
+
+@dataclass
+class ActivityCategoryStats:
+    """Aggregated stats for an activity category.
+
+    Attributes:
+        category: Category name (fitness, wellness, etc.).
+        event_count: Number of events in this category.
+        total_hours: Total hours spent.
+        top_venues: List of (venue, count) tuples.
+        top_activities: List of (activity_type, count) tuples.
+    """
+
+    category: str
+    event_count: int
+    total_hours: float
+    top_venues: list[tuple[str, int]]
+    top_activities: list[tuple[str, int]]
+
+
+@dataclass
+class MergeSuggestion:
+    """Suggestion to link inferred friend to email-based friend.
+
+    Attributes:
+        inferred_name: Name extracted from events.
+        suggested_email: Email that might match.
+        confidence: high/medium/low.
+        reason: Why this match was suggested.
+    """
+
+    inferred_name: str
+    suggested_email: str
+    confidence: str
+    reason: str

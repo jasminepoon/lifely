@@ -1,0 +1,697 @@
+"""LLM-based enrichment for calendar events.
+
+Uses OpenAI to extract location details and classify events.
+Async batch processing with caching to reduce cost.
+"""
+
+import asyncio
+import json
+import os
+from collections import Counter, defaultdict
+from pathlib import Path
+
+from openai import AsyncOpenAI
+
+from .models import (
+    ActivityCategoryStats,
+    ActivityEvent,
+    FriendEvent,
+    FriendStats,
+    InferredFriend,
+    LocationEnrichment,
+    MergeSuggestion,
+    NormalizedEvent,
+)
+from .places import (
+    load_places_cache,
+    looks_like_maps_url,
+    resolve_place_from_location_string,
+    save_places_cache,
+)
+
+
+LOCATION_PROMPT = """Extract location details from these calendar events.
+
+For each event with location data, extract:
+- venue_name: Business/place name (e.g., "Thai Villa", "Equinox", "AMC Theater")
+- neighborhood: NYC neighborhood or district. Infer from address when possible:
+  - Lower Manhattan: FiDi, Tribeca, SoHo, NoHo, Chinatown, LES, East Village, West Village, Greenwich Village
+  - Midtown: Midtown East, Midtown West, Hell's Kitchen, Hudson Yards, Koreatown, Murray Hill, Kips Bay
+  - Upper: Upper East Side, Upper West Side, Harlem
+  - Brooklyn: Williamsburg, DUMBO, Park Slope, Bushwick, Greenpoint, Brooklyn Heights
+  - Example: "34th Street" → "Midtown", "6th Ave & 32nd St" → "Koreatown", "Bowery" → "East Village"
+- city: Borough or city (e.g., "Manhattan", "Brooklyn", "Queens", "New York")
+- cuisine: Food type if restaurant/bar (e.g., "Thai", "Italian", "Japanese", "Korean", "American")
+
+Rules:
+- ALWAYS try to infer neighborhood from NYC street addresses
+- For non-food venues, leave cuisine as null
+- Skip events with no location data or private addresses (apartments, homes)
+
+Events:
+{events_json}
+
+Return JSON: {{"results": [
+  {{"event_id": "...", "venue_name": "...", "neighborhood": "...", "city": "...", "cuisine": "..."}}
+]}}
+"""
+
+
+CLASSIFICATION_PROMPT = """Classify these calendar events into SOCIAL, ACTIVITY, or OTHER.
+
+For each event, determine:
+1. **SOCIAL** - Meeting with specific people (friends, family, dates)
+   - Extract `names`: list of person names mentioned
+   - Examples: "Dinner with Masha" → ["Masha"], "Coffee w/ John & Sarah" → ["John", "Sarah"]
+   - "1:1 Bob" → ["Bob"], "Mom's birthday" → ["Mom"]
+
+2. **ACTIVITY** - Personal activities you do solo or at a venue
+   - Extract `category`, `activity_type`, and `venue` (if mentioned in summary)
+   - Categories:
+     - fitness: gym, yoga, climbing, running, pilates, cycling, swimming, CrossFit
+     - wellness: spa, massage, meditation, acupuncture, sauna, float tank
+     - health: doctor, dentist, therapy, physical therapy, dermatologist
+     - personal_care: haircut, nails, facial, waxing, barber
+     - learning: class, lesson, workshop, course, tutoring
+     - entertainment: movie, concert, show, museum, theater, comedy
+   - Extract venue from summary if present:
+     - "Yoga @ Vital" → venue: "Vital"
+     - "Climbing at Brooklyn Boulders" → venue: "Brooklyn Boulders"
+     - "Gym" → venue: null (no specific venue)
+
+3. **OTHER** - Skip these (work, reminders, travel logistics, chores)
+   - Examples: "Team standup", "Flight to LA", "Pay rent", "Block: focus time"
+
+Events:
+{events_json}
+
+Return JSON: {{"results": [
+  {{"event_id": "...", "type": "SOCIAL", "names": ["..."]}} or
+  {{"event_id": "...", "type": "ACTIVITY", "category": "...", "activity_type": "...", "venue": "..."}} or
+  {{"event_id": "...", "type": "OTHER"}}
+]}}
+"""
+
+
+BATCH_SIZE = 50  # Events per API call
+LLM_CACHE_FILENAME = "llm_cache.json"
+
+
+async def enrich_all_events(
+    events: list[NormalizedEvent],
+    api_key: str | None = None,
+) -> dict[str, LocationEnrichment]:
+    """Enrich ALL events with location data via LLM (async).
+
+    Args:
+        events: List of NormalizedEvents to enrich.
+        api_key: OpenAI API key. Defaults to OPENAI_API_KEY env var.
+
+    Returns:
+        Dict mapping event_id -> LocationEnrichment for events with locations.
+    """
+    api_key = api_key or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not set")
+
+    data_dir = _data_dir()
+    llm_cache = _load_llm_cache(data_dir)
+    location_cache = llm_cache.setdefault("locations_by_location", {})
+    places_cache = load_places_cache(data_dir)
+    maps_api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
+
+    enrichment_lookup: dict[str, LocationEnrichment] = {}
+
+    # Deduplicate by location to reduce tokens
+    seen_locations: dict[str, list[str]] = {}  # location -> [event_ids]
+    unique_events = []
+    event_location_lookup: dict[str, str] = {}
+
+    for e in events:
+        if not e.location_raw:
+            continue
+        loc = e.location_raw.strip()
+        if not loc:
+            continue
+
+        cached = location_cache.get(loc)
+        if cached:
+            enrichment_lookup[e.id] = _location_enrichment_from_cache(e.id, cached)
+            continue
+
+        # Try Places API for opaque map links before LLM
+        if maps_api_key and looks_like_maps_url(loc):
+            resolved = resolve_place_from_location_string(loc, maps_api_key, places_cache)
+            if resolved:
+                resolved.event_id = e.id
+                enrichment_lookup[e.id] = resolved
+                location_cache[loc] = _cache_from_enrichment(resolved)
+                continue
+
+        if loc not in seen_locations:
+            seen_locations[loc] = []
+            unique_events.append(
+                {
+                    "event_id": e.id,
+                    "summary": e.summary,
+                    "location": loc,
+                }
+            )
+        seen_locations[loc].append(e.id)
+        event_location_lookup[e.id] = loc
+
+    if not unique_events:
+        _save_llm_cache(llm_cache, data_dir)
+        save_places_cache(places_cache, data_dir)
+        return enrichment_lookup
+
+    # Call OpenAI with async parallel batches
+    client = AsyncOpenAI(api_key=api_key)
+    enrichments = await _call_openai_parallel(
+        client, unique_events, LOCATION_PROMPT, _parse_location_results
+    )
+
+    # Build lookup: event_id -> enrichment
+    for e in enrichments:
+        enrichment_lookup[e.event_id] = e
+        loc = event_location_lookup.get(e.event_id)
+        if loc:
+            location_cache[loc] = _cache_from_enrichment(e)
+
+    # Propagate enrichments to all events with same location
+    for event in unique_events:
+        loc = event["location"]
+        for eid in seen_locations.get(loc, []):
+            if eid in enrichment_lookup:
+                continue
+            template = enrichment_lookup.get(event["event_id"])
+            if template:
+                enrichment_lookup[eid] = LocationEnrichment(
+                    event_id=eid,
+                    venue_name=template.venue_name,
+                    neighborhood=template.neighborhood,
+                    city=template.city,
+                    cuisine=template.cuisine,
+                )
+
+    _save_llm_cache(llm_cache, data_dir)
+    save_places_cache(places_cache, data_dir)
+    return enrichment_lookup
+
+
+async def classify_solo_events(
+    events: list[NormalizedEvent],
+    enrichment_lookup: dict[str, LocationEnrichment] | None = None,
+    api_key: str | None = None,
+) -> tuple[list[InferredFriend], dict[str, ActivityCategoryStats]]:
+    """Classify events into SOCIAL/ACTIVITY/OTHER (now includes invite-based)."""
+    api_key = api_key or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not set")
+
+    data_dir = _data_dir()
+    llm_cache = _load_llm_cache(data_dir)
+    classification_cache = llm_cache.setdefault("classification_by_summary", {})
+
+    events_for_classification = []
+    summary_to_events: dict[str, list[dict]] = defaultdict(list)
+    classification_by_id: dict[str, dict] = {}
+    summary_for_event: dict[str, str] = {}
+    event_meta_by_id: dict[str, dict] = {}
+
+    for e in events:
+        if not e.summary:
+            continue
+        event_payload = {
+            "event_id": e.id,
+            "summary": e.summary,
+            "date": e.start.strftime("%Y-%m-%d"),
+            "hours": round(e.duration_minutes / 60, 1),
+            "location_raw": e.location_raw,
+        }
+        summary_key = e.summary.lower().strip()
+        summary_to_events[summary_key].append(event_payload)
+        summary_for_event[e.id] = summary_key
+        event_meta_by_id[e.id] = event_payload
+
+        cached = classification_cache.get(summary_key)
+        if cached:
+            classification_by_id[e.id] = {
+                "event_id": e.id,
+                **cached,
+                "summary": e.summary,
+                "date": event_payload["date"],
+                "hours": event_payload["hours"],
+                "location_raw": e.location_raw,
+            }
+
+    # Build unique events to send to LLM (uncached summaries only)
+    for summary_key, grouped_events in summary_to_events.items():
+        if summary_key in classification_cache:
+            continue
+        events_for_classification.append(grouped_events[0])
+
+    if events_for_classification:
+        client = AsyncOpenAI(api_key=api_key)
+        classifications = await _call_openai_parallel(
+            client, events_for_classification, CLASSIFICATION_PROMPT, _parse_classification_results
+        )
+
+        for c in classifications:
+            event_id = c.get("event_id")
+            summary_key = summary_for_event.get(event_id)
+            if not summary_key:
+                continue
+            cached_payload = {k: v for k, v in c.items() if k != "event_id"}
+            classification_cache[summary_key] = cached_payload
+            event_meta = event_meta_by_id.get(event_id, {})
+            classification_by_id[event_id] = {
+                "event_id": event_id,
+                **cached_payload,
+                "summary": event_meta.get("summary"),
+                "date": event_meta.get("date"),
+                "hours": event_meta.get("hours"),
+                "location_raw": event_meta.get("location_raw"),
+            }
+
+        # Propagate new classifications to same-summary events
+        for summary_key, grouped_events in summary_to_events.items():
+            cached = classification_cache.get(summary_key)
+            if not cached:
+                continue
+            for ev in grouped_events:
+                if ev["event_id"] in classification_by_id:
+                    continue
+                classification_by_id[ev["event_id"]] = {
+                    "event_id": ev["event_id"],
+                    **cached,
+                    "summary": ev.get("summary"),
+                    "date": ev.get("date"),
+                    "hours": ev.get("hours"),
+                    "location_raw": ev.get("location_raw"),
+                }
+
+    _save_llm_cache(llm_cache, data_dir)
+
+    if not classification_by_id:
+        return [], {}
+
+    # Aggregate SOCIAL events into InferredFriends
+    inferred_friends = _aggregate_inferred_friends(
+        list(summary_for_event.keys()), classification_by_id, enrichment_lookup
+    )
+
+    # Aggregate ACTIVITY events into ActivityCategoryStats
+    activity_stats = _aggregate_activity_stats(
+        list(summary_for_event.keys()), classification_by_id, enrichment_lookup
+    )
+
+    return inferred_friends, activity_stats
+
+
+def _aggregate_inferred_friends(
+    event_ids: list[str],
+    classification_by_id: dict[str, dict],
+    enrichment_lookup: dict[str, LocationEnrichment] | None,
+) -> list[InferredFriend]:
+    """Aggregate SOCIAL events by extracted name."""
+    by_name: dict[str, dict] = defaultdict(
+        lambda: {"display_name": None, "events": [], "total_hours": 0.0}
+    )
+
+    for event_id in event_ids:
+        classification = classification_by_id.get(event_id)
+        if not classification or classification.get("type") != "SOCIAL":
+            continue
+
+        names = classification.get("names", [])
+        if not names:
+            continue
+
+        # Get enrichment data if available
+        enrichment = enrichment_lookup.get(event_id) if enrichment_lookup else None
+
+        for name in names:
+            if not name:
+                continue
+            key = name.strip().lower()
+            by_name[key]["total_hours"] += classification.get("hours", 0) or 0
+            by_name[key]["events"].append(
+                FriendEvent(
+                    id=event_id,
+                    summary=classification.get("summary"),
+                    date=classification.get("date"),
+                    hours=classification.get("hours", 0) or 0,
+                    location_raw=classification.get("location_raw"),
+                    venue_name=enrichment.venue_name if enrichment else None,
+                    neighborhood=enrichment.neighborhood if enrichment else None,
+                    cuisine=enrichment.cuisine if enrichment else None,
+                )
+            )
+            if by_name[key]["display_name"] is None:
+                by_name[key]["display_name"] = name.strip()
+
+    # Convert to InferredFriend objects
+    friends = [
+        InferredFriend(
+            name=data["display_name"],
+            normalized_name=key,
+            event_count=len(data["events"]),
+            total_hours=round(data["total_hours"], 1),
+            events=data["events"],
+        )
+        for key, data in by_name.items()
+    ]
+
+    # Sort by event count descending
+    friends.sort(key=lambda x: (x.event_count, x.total_hours), reverse=True)
+
+    return friends
+
+
+def _aggregate_activity_stats(
+    event_ids: list[str],
+    classification_by_id: dict[str, dict],
+    enrichment_lookup: dict[str, LocationEnrichment] | None,
+) -> dict[str, ActivityCategoryStats]:
+    """Aggregate ACTIVITY events by category."""
+    by_category: dict[str, dict] = defaultdict(
+        lambda: {"events": [], "total_hours": 0.0, "venues": Counter(), "types": Counter()}
+    )
+
+    for event_id in event_ids:
+        classification = classification_by_id.get(event_id)
+        if not classification or classification.get("type") != "ACTIVITY":
+            continue
+
+        category = classification.get("category", "other")
+        activity_type = classification.get("activity_type", "unknown")
+
+        # Get enrichment data if available
+        enrichment = enrichment_lookup.get(event_id) if enrichment_lookup else None
+
+        # Prefer venue from classification (extracted from summary like "Yoga @ Vital")
+        # Fall back to venue from location enrichment
+        venue_from_classification = classification.get("venue")
+        venue_name = venue_from_classification or (enrichment.venue_name if enrichment else None)
+
+        activity_event = ActivityEvent(
+            id=event_id,
+            summary=classification.get("summary"),
+            date=classification.get("date"),
+            hours=classification.get("hours", 0) or 0,
+            category=category,
+            activity_type=activity_type,
+            venue_name=venue_name,
+            neighborhood=enrichment.neighborhood if enrichment else None,
+        )
+
+        by_category[category]["events"].append(activity_event)
+        by_category[category]["total_hours"] += classification.get("hours", 0) or 0
+        if activity_event.venue_name:
+            by_category[category]["venues"][activity_event.venue_name] += 1
+        if activity_type:
+            by_category[category]["types"][activity_type] += 1
+
+    return {
+        cat: ActivityCategoryStats(
+            category=cat,
+            event_count=len(data["events"]),
+            total_hours=round(data["total_hours"], 1),
+            top_venues=data["venues"].most_common(5),
+            top_activities=data["types"].most_common(5),
+        )
+        for cat, data in by_category.items()
+    }
+
+
+def suggest_merges(
+    inferred: list[InferredFriend],
+    email_friends: list[FriendStats],
+) -> list[MergeSuggestion]:
+    """Suggest links between inferred names and email friends."""
+    suggestions = []
+
+    for inf in inferred:
+        for ef in email_friends:
+            email_prefix = ef.email.split("@")[0].lower()
+            # Check if inferred name appears in email prefix
+            if inf.normalized_name in email_prefix or email_prefix in inf.normalized_name:
+                # Check if display name also matches
+                display_match = ef.display_name and inf.normalized_name in ef.display_name.lower()
+                confidence = "high" if display_match else "medium"
+                suggestions.append(
+                    MergeSuggestion(
+                        inferred_name=inf.name,
+                        suggested_email=ef.email,
+                        confidence=confidence,
+                        reason=f"'{inf.name}' matches email prefix '{email_prefix}'",
+                    )
+                )
+
+    return suggestions
+
+
+def apply_enrichments_to_friend_stats(
+    friend_stats: list[FriendStats],
+    enrichment_lookup: dict[str, LocationEnrichment],
+) -> list[FriendStats]:
+    """Apply location enrichments to FriendStats events.
+
+    Args:
+        friend_stats: List of FriendStats to update.
+        enrichment_lookup: Dict mapping event_id -> LocationEnrichment.
+
+    Returns:
+        The same list with events enriched.
+    """
+    for friend in friend_stats:
+        for event in friend.events:
+            if event.id in enrichment_lookup:
+                e = enrichment_lookup[event.id]
+                event.venue_name = e.venue_name
+                event.neighborhood = e.neighborhood
+                event.cuisine = e.cuisine
+    return friend_stats
+
+
+MAX_CONCURRENT_BATCHES = 2  # Limit concurrent API calls to avoid rate limits
+
+
+async def _call_openai_parallel(
+    client: AsyncOpenAI,
+    events: list[dict],
+    prompt_template: str,
+    parse_fn,
+) -> list:
+    """Call OpenAI with parallel batches for speed, with concurrency limit."""
+    if not events:
+        return []
+
+    # Create batches
+    batches = [events[i : i + BATCH_SIZE] for i in range(0, len(events), BATCH_SIZE)]
+
+    # Use semaphore to limit concurrent requests
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_BATCHES)
+
+    async def limited_batch(batch):
+        async with semaphore:
+            return await _call_openai_batch(client, batch, prompt_template, parse_fn)
+
+    # Run batches with concurrency limit
+    tasks = [limited_batch(batch) for batch in batches]
+    results = await asyncio.gather(*tasks)
+
+    # Flatten results
+    all_results = []
+    for batch_result in results:
+        all_results.extend(batch_result)
+
+    return all_results
+
+
+async def _call_openai_batch(
+    client: AsyncOpenAI,
+    events: list[dict],
+    prompt_template: str,
+    parse_fn,
+    max_retries: int = 5,
+) -> list:
+    """Call OpenAI for a single batch of events with retry logic."""
+    prompt = prompt_template.format(events_json=json.dumps(events, indent=2))
+
+    for attempt in range(max_retries):
+        try:
+            response = await client.responses.create(
+                model="gpt-5.1",
+                input=prompt,
+                reasoning={"effort": "low"},
+                text={"verbosity": "low"},
+            )
+
+            content = response.output_text
+            if not content:
+                return []
+
+            # Extract JSON from response (may be wrapped in markdown code block)
+            json_str = content
+            if "```json" in content:
+                json_str = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                json_str = content.split("```")[1].split("```")[0].strip()
+
+            try:
+                data = json.loads(json_str)
+                return parse_fn(data)
+            except (json.JSONDecodeError, KeyError):
+                return []
+
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "rate_limit" in error_str.lower():
+                # Exponential backoff: 5s, 10s, 20s, 40s, 80s
+                wait_time = 5 * (2 ** attempt)
+                await asyncio.sleep(wait_time)
+                continue
+            raise
+
+    return []  # All retries failed
+
+
+def _parse_location_results(data: dict) -> list[LocationEnrichment]:
+    """Parse location enrichment results from LLM response."""
+    results = data.get("results", [])
+    return [
+        LocationEnrichment(
+            event_id=r.get("event_id", ""),
+            venue_name=r.get("venue_name"),
+            neighborhood=r.get("neighborhood"),
+            city=r.get("city"),
+            cuisine=r.get("cuisine"),
+        )
+        for r in results
+    ]
+
+
+def _parse_classification_results(data: dict) -> list[dict]:
+    """Parse classification results from LLM response."""
+    return data.get("results", [])
+
+
+# ═══════════════════════════════════════════════════════════
+# PARALLEL EXECUTION - Run both LLM operations concurrently
+# ═══════════════════════════════════════════════════════════
+
+
+async def enrich_and_classify_all(
+    events: list[NormalizedEvent],
+    api_key: str | None = None,
+) -> tuple[
+    dict[str, LocationEnrichment],
+    list[InferredFriend],
+    dict[str, ActivityCategoryStats],
+]:
+    """Run location enrichment AND classification in parallel.
+
+    This is ~2x faster than sequential because both LLM operations
+    run concurrently. The classification runs without enrichment data
+    initially, then we patch in the location details afterward.
+
+    Args:
+        events: All normalized events.
+        api_key: OpenAI API key.
+
+    Returns:
+        Tuple of (enrichment_lookup, inferred_friends, activity_stats).
+    """
+    # Run both async operations concurrently
+    enrichment_lookup, (inferred_friends, activity_stats) = await asyncio.gather(
+        enrich_all_events(events, api_key),
+        classify_solo_events(events, enrichment_lookup=None, api_key=api_key),
+    )
+
+    # Patch enrichment data into inferred friend events
+    for friend in inferred_friends:
+        for event in friend.events:
+            enrichment = enrichment_lookup.get(event.id)
+            if enrichment:
+                event.venue_name = event.venue_name or enrichment.venue_name
+                event.neighborhood = enrichment.neighborhood
+                event.cuisine = enrichment.cuisine
+
+    return enrichment_lookup, inferred_friends, activity_stats
+
+
+def enrich_and_classify_all_sync(
+    events: list[NormalizedEvent],
+    api_key: str | None = None,
+) -> tuple[
+    dict[str, LocationEnrichment],
+    list[InferredFriend],
+    dict[str, ActivityCategoryStats],
+]:
+    """Sync wrapper for enrich_and_classify_all (PARALLEL version)."""
+    return asyncio.run(enrich_and_classify_all(events, api_key))
+
+
+# ═══════════════════════════════════════════════════════════
+# LEGACY SYNC WRAPPERS (sequential, for backwards compatibility)
+# ═══════════════════════════════════════════════════════════
+
+
+def enrich_all_events_sync(
+    events: list[NormalizedEvent],
+    api_key: str | None = None,
+) -> dict[str, LocationEnrichment]:
+    """Sync wrapper for enrich_all_events."""
+    return asyncio.run(enrich_all_events(events, api_key))
+
+
+def classify_solo_events_sync(
+    events: list[NormalizedEvent],
+    enrichment_lookup: dict[str, LocationEnrichment] | None = None,
+    api_key: str | None = None,
+) -> tuple[list[InferredFriend], dict[str, ActivityCategoryStats]]:
+    """Sync wrapper for classify_solo_events."""
+    return asyncio.run(classify_solo_events(events, enrichment_lookup, api_key))
+
+
+def _data_dir() -> Path:
+    return Path(os.environ.get("LIFELY_DATA_DIR", "data"))
+
+
+def _load_llm_cache(data_dir: Path) -> dict:
+    path = data_dir / LLM_CACHE_FILENAME
+    if not path.exists():
+        return {"locations_by_location": {}, "classification_by_summary": {}}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return {"locations_by_location": {}, "classification_by_summary": {}}
+
+
+def _save_llm_cache(cache: dict, data_dir: Path) -> None:
+    path = data_dir / LLM_CACHE_FILENAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(cache, f, indent=2)
+
+
+def _cache_from_enrichment(enrichment: LocationEnrichment) -> dict:
+    return {
+        "venue_name": enrichment.venue_name,
+        "neighborhood": enrichment.neighborhood,
+        "city": enrichment.city,
+        "cuisine": enrichment.cuisine,
+    }
+
+
+def _location_enrichment_from_cache(event_id: str, cached: dict) -> LocationEnrichment:
+    return LocationEnrichment(
+        event_id=event_id,
+        venue_name=cached.get("venue_name"),
+        neighborhood=cached.get("neighborhood"),
+        city=cached.get("city"),
+        cuisine=cached.get("cuisine"),
+    )

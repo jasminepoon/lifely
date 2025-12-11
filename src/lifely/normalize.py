@@ -100,16 +100,28 @@ def _parse_event_time(time_obj: dict, tz: ZoneInfo) -> tuple[datetime | None, bo
     if not time_obj:
         return None, False
 
+    # Prefer the event's own timezone when present; fallback to target tz
+    event_tz = tz
+    event_tz_str = time_obj.get("timeZone")
+    if event_tz_str:
+        try:
+            event_tz = ZoneInfo(event_tz_str)
+        except Exception:
+            event_tz = tz
+
     # All-day events use 'date' (YYYY-MM-DD)
     if "date" in time_obj:
         date_str = time_obj["date"]
         dt = datetime.strptime(date_str, "%Y-%m-%d")
-        # All-day events: use midnight in target timezone
-        return dt.replace(tzinfo=tz), True
+        # All-day events: use midnight in the event's timezone, then normalize
+        return dt.replace(tzinfo=event_tz).astimezone(tz), True
 
     # Timed events use 'dateTime'
     if "dateTime" in time_obj:
         dt = dateutil_parser.isoparse(time_obj["dateTime"])
+        if dt.tzinfo is None:
+            # Some events provide timeZone separately; attach before converting
+            dt = dt.replace(tzinfo=event_tz)
         # Convert to target timezone
         return dt.astimezone(tz), False
 
