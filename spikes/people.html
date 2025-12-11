@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>People Spike | Lifely</title>
+  <link rel="stylesheet" href="base.css" />
+</head>
+<body class="page">
+  <div class="container">
+    <div class="progress-dots" style="margin-bottom:16px;">
+      <span></span><span class="is-active"></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="card">
+      <div class="heading">The ones who showed up</div>
+      <div class="subheading">Top friends with venues & neighborhoods</div>
+      <div class="grid" style="margin-top:18px;" id="people"></div>
+    </div>
+  </div>
+  <script type="module">
+    import { animateBars } from './base.js';
+
+    const PEOPLE = [
+      {
+        name: 'Beth',
+        count: 12,
+        hours: 28,
+        venues: ['Twin Tails', 'Cho Dang Gol', 'Mitr Thai'],
+        hoods: ['Greenwich Village', 'Midtown'],
+        pct: 100,
+      },
+      {
+        name: 'Masha',
+        count: 10,
+        hours: 22,
+        venues: ['Cho Dang Gol', 'AMC 34th', 'Xie Bao'],
+        hoods: ['FiDi', 'East Village'],
+        pct: 83,
+      },
+      {
+        name: 'Angela',
+        count: 7,
+        hours: 15,
+        venues: ['Suram', 'Sushi on Me'],
+        hoods: ['Hudson Yards', 'Midtown'],
+        pct: 65,
+      },
+    ];
+
+    const container = document.getElementById('people');
+    PEOPLE.forEach((p, idx) => {
+      const card = document.createElement('div');
+      card.className = 'person card';
+      card.style.animationDelay = `${idx * 80}ms`;
+      card.innerHTML = `
+        <div class="avatar">${p.name[0]}</div>
+        <div>
+          <p class="person__name">${p.name}</p>
+          <p class="person__meta">${p.count} moments · ${p.hours} hours</p>
+          <div class="pill-row">
+            ${p.venues.map((v) => `<span class="chip chip--accent">${v}</span>`).join('')}
+            ${p.hoods.map((h) => `<span class="chip">${h}</span>`).join('')}
+          </div>
+          <div class="sparkbar">
+            <div class="sparkbar__fill" data-value="${p.pct}"></div>
+          </div>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+    requestAnimationFrame(() => animateBars('.sparkbar__fill'));
+  </script>
+</body>
+</html>

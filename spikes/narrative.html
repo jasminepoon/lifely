@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Narrative Spike | Lifely</title>
+  <link rel="stylesheet" href="base.css" />
+</head>
+<body class="page">
+  <div class="container">
+    <div class="progress-dots" style="margin-bottom:16px;">
+      <span></span><span></span><span></span><span></span><span></span><span class="is-active"></span><span></span>
+    </div>
+    <div class="card">
+      <div class="heading">Your story</div>
+      <p class="narrative" id="story"></p>
+    </div>
+  </div>
+  <script type="module">
+    import { typewriter } from './base.js';
+
+    const text = `2025 was the year you became a regular. Sundays at Vital. Thursdays in Greenpoint. 
+Beth claimed twelve Saturdays—enough to be a season. You spent 1,807 hours in motion, 
+often in search of Japanese food (17 times, you might have a type). What will 2026 hold?`;
+
+    typewriter(document.getElementById('story'), text, 12);
+  </script>
+</body>
+</html>

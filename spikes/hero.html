@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hero Spike | Lifely</title>
+  <link rel="stylesheet" href="base.css" />
+</head>
+<body class="page">
+  <div class="container">
+    <div class="progress-dots" style="margin-bottom:16px;">
+      <span class="is-active"></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <section class="hero">
+      <div class="hero__eyebrow">2025 Wrapped</div>
+      <h1 class="hero__year" id="year">2025</h1>
+      <p class="hero__subtitle">Your year in <span id="event-count">0</span> moments</p>
+      <div class="stat-row" style="margin-top:8px;">
+        <div class="stat">
+          <div class="stat__value" id="stat-events">0</div>
+          <div class="stat__label">Events</div>
+        </div>
+        <div class="stat">
+          <div class="stat__value" id="stat-hours">0</div>
+          <div class="stat__label">Hours in motion</div>
+        </div>
+        <div class="stat">
+          <div class="stat__value" id="stat-people">0</div>
+          <div class="stat__label">People</div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script type="module">
+    import { countUp } from './base.js';
+
+    const data = {
+      year: 2025,
+      events: 392,
+      hours: 1807,
+      people: 48,
+    };
+
+    document.getElementById('year').textContent = data.year;
+    countUp(document.getElementById('event-count'), data.events, 1000);
+    countUp(document.getElementById('stat-events'), data.events, 1000);
+    countUp(document.getElementById('stat-hours'), data.hours, 1200);
+    countUp(document.getElementById('stat-people'), data.people, 900);
+  </script>
+</body>
+</html>

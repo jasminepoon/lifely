@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Places Spike | Lifely</title>
+  <link rel="stylesheet" href="base.css" />
+</head>
+<body class="page">
+  <div class="container">
+    <div class="progress-dots" style="margin-bottom:16px;">
+      <span></span><span></span><span class="is-active"></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="grid" style="gap:18px;">
+      <div class="card">
+        <div class="heading">Your NYC footprint</div>
+        <div class="subheading">Stacked bars — ships by default</div>
+        <div style="margin-top:14px;">
+          <div class="bar-row">
+            <div class="bar-row__label">Williamsburg</div>
+            <div class="bar-row__bar"><div class="bar-row__fill" data-value="100"></div></div>
+            <div class="bar-row__value">30</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-row__label">Greenpoint</div>
+            <div class="bar-row__bar"><div class="bar-row__fill" data-value="70"></div></div>
+            <div class="bar-row__value">21</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-row__label">Midtown</div>
+            <div class="bar-row__bar"><div class="bar-row__fill" data-value="40"></div></div>
+            <div class="bar-row__value">12</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-row__label">Lower East Side</div>
+            <div class="bar-row__bar"><div class="bar-row__fill" data-value="30"></div></div>
+            <div class="bar-row__value">9</div>
+          </div>
+        </div>
+        <div class="pill-row" style="margin-top:14px;">
+          <span class="chip chip--accent">🍜 Japanese · 17</span>
+          <span class="chip chip--accent">🍚 Korean · 8</span>
+          <span class="chip chip--accent">🍔 American · 8</span>
+          <span class="chip">🌮 Mexican · 5</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="heading">Map heat (optional)</div>
+        <div class="subheading">Enable if lat/lng density looks good</div>
+        <div class="map" id="map"></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { animateBars } from './base.js';
+
+    requestAnimationFrame(() => animateBars('.bar-row__fill'));
+
+    // Mocked lat/lng normalized positions for demo
+    const map = document.getElementById('map');
+    const dots = [
+      { left: 38, top: 55, hot: true, label: 'Williamsburg' },
+      { left: 32, top: 42, hot: false, label: 'Greenpoint' },
+      { left: 55, top: 48, hot: false, label: 'Midtown' },
+    ];
+    dots.forEach((d) => {
+      const dot = document.createElement('div');
+      dot.className = `map__dot ${d.hot ? '' : 'map__dot--warm'}`.trim();
+      dot.style.left = `${d.left}%`;
+      dot.style.top = `${d.top}%`;
+      dot.title = d.label;
+      map.appendChild(dot);
+    });
+  </script>
+</body>
+</html>

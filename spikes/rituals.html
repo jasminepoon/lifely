@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rituals Spike | Lifely</title>
+  <link rel="stylesheet" href="base.css" />
+</head>
+<body class="page">
+  <div class="container">
+    <div class="progress-dots" style="margin-bottom:16px;">
+      <span></span><span></span><span></span><span class="is-active"></span><span></span><span></span><span></span>
+    </div>
+    <div class="card">
+      <div class="heading">Your rituals</div>
+      <div class="subheading">How you showed up for yourself</div>
+      <div style="margin-top:16px;">
+        <div class="bar-row">
+          <div class="bar-row__label">Therapy</div>
+          <div class="bar-row__bar"><div class="bar-row__fill" data-value="100"></div></div>
+          <div class="bar-row__value">15</div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-row__label">Yoga</div>
+          <div class="bar-row__bar"><div class="bar-row__fill" data-value="85"></div></div>
+          <div class="bar-row__value">13</div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-row__label">Climbing</div>
+          <div class="bar-row__bar"><div class="bar-row__fill" data-value="45"></div></div>
+          <div class="bar-row__value">7</div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-row__label">Pilates</div>
+          <div class="bar-row__bar"><div class="bar-row__fill" data-value="35"></div></div>
+          <div class="bar-row__value">5</div>
+        </div>
+      </div>
+      <p class="subheading" style="margin-top:14px;">You showed up for yourself 40 times.</p>
+    </div>
+  </div>
+  <script type="module">
+    import { animateBars } from './base.js';
+    requestAnimationFrame(() => animateBars('.bar-row__fill'));
+  </script>
+</body>
+</html>
