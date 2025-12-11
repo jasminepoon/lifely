@@ -153,7 +153,7 @@ async def enrich_all_events(
     seen_locations: dict[str, list[str]] = {}  # location -> [event_ids]
     unique_events = []
     event_location_lookup: dict[str, str] = {}
-    unique_locations: list[str] = []
+    geocode_targets: set[str] = set()
 
     for e in events:
         if not e.location_raw:
@@ -162,9 +162,16 @@ async def enrich_all_events(
         if not loc:
             continue
 
+        seen_locations.setdefault(loc, []).append(e.id)
+        event_location_lookup[e.id] = loc
+
         cached = location_cache.get(loc)
         if cached:
             enrichment_lookup[e.id] = _location_enrichment_from_cache(e.id, cached)
+            if maps_api_key and (
+                cached.get("latitude") is None or cached.get("longitude") is None
+            ):
+                geocode_targets.add(loc)
             continue
 
         # Try Places API for opaque map links before LLM
@@ -176,9 +183,11 @@ async def enrich_all_events(
                 location_cache[loc] = _cache_from_enrichment(resolved)
                 continue
 
-        if loc not in seen_locations:
-            seen_locations[loc] = []
-            unique_locations.append(loc)
+        if maps_api_key:
+            geocode_targets.add(loc)
+
+        # Only send each unique location to the LLM once
+        if len(seen_locations[loc]) == 1:  # first time we saw this location
             unique_events.append(
                 {
                     "event_id": e.id,
@@ -186,10 +195,8 @@ async def enrich_all_events(
                     "location": _shorten_location(loc),
                 }
             )
-        seen_locations[loc].append(e.id)
-        event_location_lookup[e.id] = loc
 
-    if not unique_events:
+    if not unique_events and not geocode_targets:
         _save_llm_cache(llm_cache, data_dir)
         save_places_cache(places_cache, data_dir)
         return enrichment_lookup
@@ -226,8 +233,8 @@ async def enrich_all_events(
                 )
 
     # Fill in lat/lng via Places for address-like strings (not just Maps URLs)
-    if maps_api_key:
-        for loc in unique_locations:
+    if maps_api_key and geocode_targets:
+        for loc in geocode_targets:
             cached = location_cache.get(loc, {})
             if cached.get("latitude") is not None and cached.get("longitude") is not None:
                 continue

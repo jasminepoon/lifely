@@ -7,8 +7,8 @@ Falls back quietly on errors to avoid blocking the main pipeline.
 import json
 import os
 from pathlib import Path
-from urllib.parse import quote_plus, urlparse
-from urllib.request import urlopen
+from urllib.parse import quote, urlparse
+from urllib.request import Request, urlopen
 
 from .models import LocationEnrichment
 
@@ -76,23 +76,22 @@ def resolve_place_from_location_string(
             longitude=cached.get("longitude"),
         )
 
-    place_id, name, address, types = _find_place(location, api_key)
+    place_id, name, address, types, lat, lng = _find_place(location, api_key)
     if not place_id and not name:
         return None
 
-    latitude = None
-    longitude = None
+    latitude = lat
+    longitude = lng
     if place_id:
         details = _get_place_details(place_id, api_key)
         if details:
-            name = details.get("name", name)
-            address = details.get("formatted_address", address)
+            name = details.get("displayName", {}).get("text", name)
+            address = details.get("formattedAddress", address)
             types = details.get("types", types)
-            neighborhood, city = _derive_neighborhood_city(details.get("address_components", []))
-            geometry = details.get("geometry", {})
-            loc = geometry.get("location", {}) if isinstance(geometry, dict) else {}
-            latitude = loc.get("lat")
-            longitude = loc.get("lng")
+            neighborhood, city = _derive_neighborhood_city(details.get("addressComponents", []))
+            loc = details.get("location", {}) if isinstance(details, dict) else {}
+            latitude = loc.get("latitude", latitude)
+            longitude = loc.get("longitude", longitude)
         else:
             neighborhood, city = None, None
     else:
@@ -121,35 +120,33 @@ def resolve_place_from_location_string(
     return enrichment
 
 
-def _find_place(location: str, api_key: str) -> tuple[str | None, str | None, str | None, list[str]]:
-    """Find a place_id using Places Find Place from text."""
-    url = (
-        "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
-        f"?input={quote_plus(location)}&inputtype=textquery"
-        "&fields=place_id,name,formatted_address,types"
-        f"&key={api_key}"
-    )
-    data = _http_get_json(url)
-    candidates = data.get("candidates") if isinstance(data, dict) else None
-    if not candidates:
-        return None, None, None, []
-    first = candidates[0]
+def _find_place(
+    location: str, api_key: str
+) -> tuple[str | None, str | None, str | None, list[str], float | None, float | None]:
+    """Find a place using Places API (New) text search."""
+    url = "https://places.googleapis.com/v1/places:searchText"
+    payload = {"textQuery": location}
+    field_mask = "places.id,places.displayName,places.formattedAddress,places.types,places.location"
+    data = _http_post_json(url, payload, api_key, field_mask)
+    places = data.get("places") if isinstance(data, dict) else None
+    if not places:
+        return None, None, None, [], None, None
+    first = places[0]
+    loc = first.get("location", {}) if isinstance(first, dict) else {}
     return (
-        first.get("place_id"),
-        first.get("name"),
-        first.get("formatted_address"),
+        first.get("id"),
+        (first.get("displayName") or {}).get("text"),
+        first.get("formattedAddress"),
         first.get("types", []),
+        loc.get("latitude"),
+        loc.get("longitude"),
     )
 
 
 def _get_place_details(place_id: str, api_key: str) -> dict | None:
-    url = (
-        "https://maps.googleapis.com/maps/api/place/details/json"
-        f"?place_id={quote_plus(place_id)}"
-        "&fields=name,formatted_address,address_components,types,geometry"
-        f"&key={api_key}"
-    )
-    return _http_get_json(url)
+    url = f"https://places.googleapis.com/v1/places/{quote(place_id)}"
+    field_mask = "id,displayName,formattedAddress,addressComponents,types,location"
+    return _http_get_json(url, api_key, field_mask)
 
 
 def _derive_neighborhood_city(components: list[dict]) -> tuple[str | None, str | None]:
@@ -158,10 +155,11 @@ def _derive_neighborhood_city(components: list[dict]) -> tuple[str | None, str |
 
     for comp in components:
         types = comp.get("types", [])
+        name = comp.get("longText") or comp.get("long_name")
         if not neighborhood and any(t in types for t in ("neighborhood", "sublocality", "sublocality_level_1")):
-            neighborhood = comp.get("long_name")
+            neighborhood = name
         if not city and any(t in types for t in ("locality", "postal_town", "administrative_area_level_2")):
-            city = comp.get("long_name")
+            city = name
         if neighborhood and city:
             break
 
@@ -170,7 +168,7 @@ def _derive_neighborhood_city(components: list[dict]) -> tuple[str | None, str |
         for comp in components:
             types = comp.get("types", [])
             if "sublocality" in types or "sublocality_level_1" in types:
-                city = comp.get("long_name")
+                city = comp.get("longText") or comp.get("long_name")
                 break
 
     return neighborhood, city
@@ -185,9 +183,33 @@ def _derive_cuisine(types: list[str]) -> str | None:
     return None
 
 
-def _http_get_json(url: str) -> dict:
+def _http_get_json(url: str, api_key: str | None = None, field_mask: str | None = None) -> dict:
+    headers = {}
+    if api_key:
+        headers["X-Goog-Api-Key"] = api_key
+    if field_mask:
+        headers["X-Goog-FieldMask"] = field_mask
+    req = Request(url, headers=headers)
     try:
-        with urlopen(url, timeout=10) as resp:
+        with urlopen(req, timeout=10) as resp:
+            if resp.status != 200:
+                return {}
+            data = resp.read()
+            return json.loads(data.decode("utf-8"))
+    except Exception:
+        return {}
+
+
+def _http_post_json(url: str, payload: dict, api_key: str, field_mask: str) -> dict:
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": field_mask,
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urlopen(req, timeout=10) as resp:
             if resp.status != 200:
                 return {}
             data = resp.read()
