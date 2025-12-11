@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Places Map (Google) | Lifely</title>
+  <link rel="stylesheet" href="base.css" />
+  <style>
+    .map-shell {
+      margin-top: 14px;
+      height: 420px;
+      border-radius: var(--radius-card);
+      border: 1px solid var(--border-default);
+      overflow: hidden;
+      background: #0b1222;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02), 0 14px 40px rgba(0, 0, 0, 0.45);
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+    .helper {
+      margin-top: 10px;
+      font-size: 0.95rem;
+    }
+    .helper code {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 3px 6px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+    }
+  </style>
+</head>
+<body class="page">
+  <div class="container">
+    <div class="card">
+      <div class="heading">Places map (Google)</div>
+      <div class="subheading">Out-of-box Google Maps heatmap using enriched lat/lng</div>
+      <div class="helper muted">
+        Load with <code>?key=YOUR_GOOGLE_MAPS_JS_KEY</code> or run
+        <code>localStorage.setItem('GMAPS_KEY', '...')</code> in DevTools, then refresh.
+      </div>
+      <div class="map-shell">
+        <div id="map"></div>
+      </div>
+      <div id="map-status" class="muted helper">Waiting for API key…</div>
+    </div>
+  </div>
+
+  <script type="module">
+    const DATA_URL = '/data/stats_2025.json';
+    const statusEl = document.getElementById('map-status');
+    const mapEl = document.getElementById('map');
+
+    const urlKey = new URLSearchParams(location.search).get('key');
+    const storedKey = localStorage.getItem('GMAPS_KEY');
+    const apiKey = urlKey || storedKey;
+
+    if (!apiKey) {
+      statusEl.textContent = 'Add your Google Maps JS API key via ?key=... or localStorage, then reload.';
+    } else {
+      localStorage.setItem('GMAPS_KEY', apiKey);
+      loadScript(apiKey)
+        .then(initMap)
+        .catch((err) => {
+          console.error(err);
+          statusEl.textContent = 'Map failed to load. Check API key and console.';
+        });
+    }
+
+    function loadScript(key) {
+      return new Promise((resolve, reject) => {
+        const existing = document.querySelector('script[data-google="maps"]');
+        if (existing) return resolve();
+        const s = document.createElement('script');
+        s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=visualization`;
+        s.async = true;
+        s.defer = true;
+        s.dataset.google = 'maps';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+
+    async function initMap() {
+      statusEl.textContent = 'Loading map…';
+      let data;
+      try {
+        data = await fetch(DATA_URL).then((r) => r.json());
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = 'Could not load stats_2025.json';
+        return;
+      }
+
+      const points = (data.location_stats?.map_points || []).filter(
+        (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)
+      );
+      if (!points.length) {
+        statusEl.textContent = 'No lat/lng found. Ensure Places enrichment succeeded.';
+        return;
+      }
+
+      const map = new google.maps.Map(mapEl, {
+        backgroundColor: '#0b1222',
+        disableDefaultUI: true,
+        gestureHandling: 'greedy',
+        styles: [
+          { elementType: 'geometry', stylers: [{ color: '#0b1222' }] },
+          { elementType: 'labels.text.fill', stylers: [{ color: '#7b8da5' }] },
+          { elementType: 'labels.text.stroke', stylers: [{ color: '#0b1222' }] },
+          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+          { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+          { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1a2235' }] },
+          { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+          { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0f1b2f' }] },
+        ],
+      });
+
+      const bounds = new google.maps.LatLngBounds();
+      points.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, { top: 24, bottom: 24, left: 24, right: 24 });
+      } else {
+        map.setCenter({ lat: 40.7128, lng: -74.006 });
+        map.setZoom(12);
+      }
+
+      const heatData = points.map(
+        (p) =>
+          ({
+            location: new google.maps.LatLng(p.lat, p.lng),
+            weight: p.count || 1,
+          })
+      );
+
+      const heatmap = new google.maps.visualization.HeatmapLayer({
+        data: heatData,
+        dissipating: true,
+        radius: 26,
+        opacity: 0.82,
+        gradient: [
+          'rgba(0, 255, 255, 0)',
+          'rgba(0, 255, 255, 0.25)',
+          'rgba(0, 220, 255, 0.45)',
+          'rgba(0, 190, 255, 0.65)',
+          'rgba(0, 150, 255, 0.85)',
+          'rgba(0, 120, 255, 0.95)',
+        ],
+        map,
+      });
+
+      statusEl.textContent = `${points.length} locations plotted via Google Maps heatmap`;
+    }
+  </script>
+</body>
+</html>
