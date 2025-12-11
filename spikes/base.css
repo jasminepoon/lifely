@@ -360,17 +360,44 @@ body {
 
 .map__dot {
   position: absolute;
-  width: 14px;
-  height: 14px;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
   border-radius: 999px;
   background: rgba(0, 212, 255, 0.7);
-  box-shadow: 0 0 18px rgba(0, 212, 255, 0.4);
+  box-shadow: 0 0 18px rgba(0, 212, 255, 0.35);
   transform: translate(-50%, -50%);
 }
 
 .map__dot--warm {
   background: rgba(255, 61, 113, 0.7);
   box-shadow: 0 0 18px rgba(255, 61, 113, 0.4);
+}
+
+.map__dot:hover {
+  transform: translate(-50%, -50%) scale(1.08);
+  box-shadow: 0 0 22px rgba(0, 212, 255, 0.5);
+}
+
+.map__legend {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.map__legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.7);
+  box-shadow: 0 0 14px rgba(0, 212, 255, 0.35);
 }
 
 .progress-dots {
