@@ -1,5 +1,5 @@
 # Credentials (sensitive - never commit)
-credentials/*
+/credentials/*
 !credentials/.gitkeep
 
 # Data outputs (large, regenerable)

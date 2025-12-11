@@ -3,9 +3,9 @@
 Generates friend rankings, time distributions, and other aggregations.
 """
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 
-from .models import FriendEvent, FriendStats, NormalizedEvent, TimeStats
+from .models import FriendEvent, FriendStats, LocationStats, NormalizedEvent, TimeStats
 
 # Emails containing these substrings are filtered out as "system" accounts
 SYSTEM_EMAIL_PATTERNS = [
@@ -87,8 +87,8 @@ def compute_friend_stats(
         if data["event_count"] >= min_events
     ]
 
-    # Sort by total hours descending
-    stats.sort(key=lambda x: x.total_hours, reverse=True)
+    # Sort by event count descending (tiebreaker: total hours)
+    stats.sort(key=lambda x: (x.event_count, x.total_hours), reverse=True)
 
     return stats
 
@@ -150,3 +150,60 @@ def _is_system_email(email: str) -> bool:
     """Check if an email belongs to a system/bot account."""
     email_lower = email.lower()
     return any(pattern in email_lower for pattern in SYSTEM_EMAIL_PATTERNS)
+
+
+def compute_location_stats(
+    friend_stats: list[FriendStats],
+    enrichment_lookup: dict | None = None,
+    top_n: int = 5,
+) -> LocationStats:
+    """Compute location statistics from ALL enriched events.
+
+    Args:
+        friend_stats: List of FriendStats (used if no enrichment_lookup).
+        enrichment_lookup: Dict mapping event_id -> LocationEnrichment for ALL events.
+        top_n: Number of top items to return for each category.
+
+    Returns:
+        LocationStats with top neighborhoods, venues, and cuisines.
+    """
+    neighborhoods: Counter[str] = Counter()
+    venues: Counter[str] = Counter()
+    cuisines: Counter[str] = Counter()
+    total_with_location = 0
+
+    # If we have enrichment lookup, use ALL enriched events
+    if enrichment_lookup:
+        for enrichment in enrichment_lookup.values():
+            if enrichment.venue_name or enrichment.neighborhood:
+                total_with_location += 1
+            if enrichment.neighborhood:
+                neighborhoods[enrichment.neighborhood] += 1
+            if enrichment.venue_name:
+                venues[enrichment.venue_name] += 1
+            if enrichment.cuisine:
+                cuisines[enrichment.cuisine] += 1
+    else:
+        # Fallback: use friend_stats only
+        seen_events: set[str] = set()
+        for friend in friend_stats:
+            for event in friend.events:
+                if event.id in seen_events:
+                    continue
+                seen_events.add(event.id)
+
+                if event.venue_name or event.neighborhood:
+                    total_with_location += 1
+                if event.neighborhood:
+                    neighborhoods[event.neighborhood] += 1
+                if event.venue_name:
+                    venues[event.venue_name] += 1
+                if event.cuisine:
+                    cuisines[event.cuisine] += 1
+
+    return LocationStats(
+        top_neighborhoods=neighborhoods.most_common(top_n),
+        top_venues=venues.most_common(top_n),
+        top_cuisines=cuisines.most_common(top_n),
+        total_with_location=total_with_location,
+    )
