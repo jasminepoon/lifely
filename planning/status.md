@@ -19,7 +19,7 @@
 
 ## Current Focus / TODOs
 
-- LLM runtime: defaults to `gpt-5.1` for location/classification; env overrides for batch size (`LIFELY_LLM_BATCH_SIZE`, default 30) and timeout (`LIFELY_LLM_TIMEOUT`, default 90s); concurrency env-driven (`LIFELY_LLM_MAX_CONCURRENCY`, default 1 to stay under GPT-5.1 TPM—bump only if your limits allow); prompt payloads trimmed; Places resolves Maps links with name/hood/cuisine **and lat/lng** when `GOOGLE_MAPS_API_KEY` is set. `.env` auto-loaded by CLI.
+- LLM runtime: defaults to `gpt-5.1` for location and `gpt-5-mini` for classification; env overrides for batch size (`LIFELY_LLM_BATCH_SIZE`, default 30) and timeout (`LIFELY_LLM_TIMEOUT`, default 90s); concurrency env-driven (`LIFELY_LLM_MAX_CONCURRENCY`, default 1 to stay under GPT-5.1 TPM—bump only if your limits allow); prompt payloads trimmed; Places resolves Maps links with name/hood/cuisine **and lat/lng** when `GOOGLE_MAPS_API_KEY` is set. `.env` auto-loaded by CLI.
 - New: stats-level LLM outputs (narrative, patterns, experiments) are generated/cached when `--enrich` runs with API key. Need a fresh enriched run to populate `data/stats_YYYY.json`.
 - UI checkpoints: prototype beats locally (hero count-up, people sparkbars, places stacked bars vs map, rituals bars, patterns list, narrative card, experiments CTA) then decide what ships; pick component variants first.
 - Map question: lat/lng only when Places resolves; bars are ready now. Inspect coord coverage after next enriched run before broadening Places beyond Maps links or adding centroid mapping.
