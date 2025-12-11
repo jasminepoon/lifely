@@ -94,6 +94,10 @@ Return JSON: {{"results": [
 
 
 BATCH_SIZE = 50  # Events per API call
+MAX_CONCURRENT_BATCHES = int(os.environ.get("LIFELY_LLM_MAX_CONCURRENCY", "4"))
+REQUEST_TIMEOUT = float(os.environ.get("LIFELY_LLM_TIMEOUT", "45"))
+LOCATION_MODEL = os.environ.get("LIFELY_LLM_LOCATION_MODEL", "gpt-5.1")
+CLASSIFICATION_MODEL = os.environ.get("LIFELY_LLM_CLASSIFICATION_MODEL", "gpt-4o-mini")
 LLM_CACHE_FILENAME = "llm_cache.json"
 
 
@@ -168,7 +172,7 @@ async def enrich_all_events(
     # Call OpenAI with async parallel batches
     client = AsyncOpenAI(api_key=api_key)
     enrichments = await _call_openai_parallel(
-        client, unique_events, LOCATION_PROMPT, _parse_location_results
+        client, unique_events, LOCATION_PROMPT, _parse_location_results, model=LOCATION_MODEL
     )
 
     # Build lookup: event_id -> enrichment
@@ -254,7 +258,11 @@ async def classify_solo_events(
     if events_for_classification:
         client = AsyncOpenAI(api_key=api_key)
         classifications = await _call_openai_parallel(
-            client, events_for_classification, CLASSIFICATION_PROMPT, _parse_classification_results
+            client,
+            events_for_classification,
+            CLASSIFICATION_PROMPT,
+            _parse_classification_results,
+            model=CLASSIFICATION_MODEL,
         )
 
         for c in classifications:
@@ -483,6 +491,8 @@ async def _call_openai_parallel(
     events: list[dict],
     prompt_template: str,
     parse_fn,
+    model: str,
+    timeout: float = REQUEST_TIMEOUT,
 ) -> list:
     """Call OpenAI with parallel batches for speed, with concurrency limit."""
     if not events:
@@ -496,7 +506,9 @@ async def _call_openai_parallel(
 
     async def limited_batch(batch):
         async with semaphore:
-            return await _call_openai_batch(client, batch, prompt_template, parse_fn)
+            return await _call_openai_batch(
+                client, batch, prompt_template, parse_fn, model=model, timeout=timeout
+            )
 
     # Run batches with concurrency limit
     tasks = [limited_batch(batch) for batch in batches]
@@ -515,18 +527,21 @@ async def _call_openai_batch(
     events: list[dict],
     prompt_template: str,
     parse_fn,
+    model: str,
+    timeout: float,
     max_retries: int = 5,
 ) -> list:
     """Call OpenAI for a single batch of events with retry logic."""
-    prompt = prompt_template.format(events_json=json.dumps(events, indent=2))
+    prompt = prompt_template.format(events_json=json.dumps(events, separators=(",", ":")))
 
     for attempt in range(max_retries):
         try:
             response = await client.responses.create(
-                model="gpt-5.1",
+                model=model,
                 input=prompt,
                 reasoning={"effort": "low"},
                 text={"verbosity": "low"},
+                timeout=timeout,
             )
 
             content = response.output_text
