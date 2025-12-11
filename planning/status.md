@@ -20,8 +20,8 @@
 ## Current Focus / TODOs
 
 - LLM runtime: concurrency now env-driven (`LIFELY_LLM_MAX_CONCURRENCY`, default 4); prompt payloads trimmed (summary + short location) to cut tokens; Places resolves Maps links with name/hood/cuisine **and lat/lng** when `GOOGLE_MAPS_API_KEY` is set.
-- UI checkpoints: prototype beats locally (hero count-up, people sparkbars, places stacked bars vs map, rituals bars, patterns list, narrative card, experiments CTA) then decide what ships.
-- Map question: we only get lat/lng when Places can resolve; LLM-only locations still lack coords. Bars are ready now; if we want map heat, broaden Places usage or add centroid mapping.
+- UI checkpoints: prototype beats locally (hero count-up, people sparkbars, places stacked bars vs map, rituals bars, patterns list, narrative card, experiments CTA) then decide what ships; pick component variants first.
+- Map question: we only get lat/lng when Places can resolve; LLM-only locations still lack coords. Bars are ready now; prototype UI and inspect data density before deciding to broaden Places beyond Maps links or add centroid mapping.
 - Docs: `planning/experience-concept.md` and other planning files are currently untracked—confirm if we should commit them.
 
 ---
