@@ -15,7 +15,7 @@
       <div class="card">
         <div class="heading">Your NYC footprint</div>
         <div class="subheading">Stacked bars — ships by default</div>
-        <div style="margin-top:14px;">
+        <div style="margin-top:14px;" id="places-bars">
           <div class="bar-row">
             <div class="bar-row__label">Williamsburg</div>
             <div class="bar-row__bar"><div class="bar-row__fill" data-value="100"></div></div>
@@ -37,7 +37,7 @@
             <div class="bar-row__value">9</div>
           </div>
         </div>
-        <div class="pill-row" style="margin-top:14px;">
+        <div class="pill-row" style="margin-top:14px;" id="cuisine-chips">
           <span class="chip chip--accent">🍜 Japanese · 17</span>
           <span class="chip chip--accent">🍚 Korean · 8</span>
           <span class="chip chip--accent">🍔 American · 8</span>
@@ -56,23 +56,101 @@
   <script type="module">
     import { animateBars } from './base.js';
 
-    requestAnimationFrame(() => animateBars('.bar-row__fill'));
+    const DATA_URL = '/data/stats_2025.json';
 
-    // Mocked lat/lng normalized positions for demo
-    const map = document.getElementById('map');
-    const dots = [
-      { left: 38, top: 55, hot: true, label: 'Williamsburg' },
-      { left: 32, top: 42, hot: false, label: 'Greenpoint' },
-      { left: 55, top: 48, hot: false, label: 'Midtown' },
-    ];
-    dots.forEach((d) => {
-      const dot = document.createElement('div');
-      dot.className = `map__dot ${d.hot ? '' : 'map__dot--warm'}`.trim();
-      dot.style.left = `${d.left}%`;
-      dot.style.top = `${d.top}%`;
-      dot.title = d.label;
-      map.appendChild(dot);
-    });
+    fetch(DATA_URL)
+      .then((r) => r.json())
+      .then(render)
+      .catch((err) => {
+        console.error(err);
+        render();
+      });
+
+    function render(data = {}) {
+      renderBars(data);
+      renderMap(data);
+      requestAnimationFrame(() => animateBars('.bar-row__fill'));
+    }
+
+    function renderBars(data) {
+      const barsHost = document.getElementById('places-bars');
+      const chipsHost = document.getElementById('cuisine-chips');
+      if (!barsHost || !chipsHost) return;
+
+      // Reset
+      barsHost.innerHTML = '';
+      chipsHost.innerHTML = '';
+
+      const locs = data.location_stats || {};
+      const hoods = locs.top_neighborhoods || [];
+      if (!hoods.length) {
+        barsHost.innerHTML = '<p class="muted">No location data yet. Run with --enrich.</p>';
+      } else {
+        const max = Math.max(...hoods.map(([, count]) => count || 1), 1);
+        hoods.slice(0, 8).forEach(([name, count]) => {
+          const pct = Math.round((count / max) * 100);
+          barsHost.insertAdjacentHTML(
+            'beforeend',
+            `<div class="bar-row">
+              <div class="bar-row__label">${name}</div>
+              <div class="bar-row__bar"><div class="bar-row__fill" data-value="${pct}"></div></div>
+              <div class="bar-row__value">${count}</div>
+            </div>`
+          );
+        });
+      }
+
+      const cuisines = locs.top_cuisines || [];
+      if (cuisines.length) {
+        cuisines.slice(0, 10).forEach(([name, count]) => {
+          const warm = ['Japanese', 'Korean', 'Thai', 'Chinese'].includes(name || '');
+          chipsHost.insertAdjacentHTML(
+            'beforeend',
+            `<span class="chip ${warm ? 'chip--accent' : ''}">${name} · ${count}</span>`
+          );
+        });
+      } else {
+        chipsHost.innerHTML = '<span class="chip">No cuisine data yet</span>';
+      }
+    }
+
+    function renderMap(data) {
+      const map = document.getElementById('map');
+      map.innerHTML = '';
+      const locs = data.location_stats || {};
+      const points = (locs.map_points || []).filter(
+        (p) => Number.isFinite(p.lat) && Number.isFinite(p.lng)
+      );
+      if (!points.length) {
+        map.innerHTML =
+          '<p class="muted" style="padding:12px;">No lat/lng available yet. Add a Google Maps API key or inspect Places enrichment.</p>';
+        return;
+      }
+
+      const maxCount = Math.max(...points.map((p) => p.count || 1), 1);
+      const lats = points.map((p) => p.lat);
+      const lngs = points.map((p) => p.lng);
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+      const minLng = Math.min(...lngs);
+      const maxLng = Math.max(...lngs);
+      const latSpan = Math.max(maxLat - minLat, 0.001);
+      const lngSpan = Math.max(maxLng - minLng, 0.001);
+
+      points.slice(0, 200).forEach((p, idx) => {
+        const left = ((p.lng - minLng) / lngSpan) * 100;
+        const top = 100 - ((p.lat - minLat) / latSpan) * 100;
+        const dot = document.createElement('div');
+        dot.className = `map__dot ${idx % 3 === 0 ? 'map__dot--warm' : ''}`.trim();
+        const size = 10 + 6 * ((p.count || 1) / maxCount);
+        dot.style.left = `${left}%`;
+        dot.style.top = `${top}%`;
+        dot.style.width = `${size}px`;
+        dot.style.height = `${size}px`;
+        dot.title = `${p.label || 'Location'} · ${p.count || 1}`;
+        map.appendChild(dot);
+      });
+    }
   </script>
 </body>
 </html>

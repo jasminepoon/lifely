@@ -171,6 +171,7 @@ def compute_location_stats(
     venues: Counter[str] = Counter()
     cuisines: Counter[str] = Counter()
     total_with_location = 0
+    point_index: dict[str, dict] = {}
 
     # If we have enrichment lookup, use ALL enriched events
     if enrichment_lookup:
@@ -183,6 +184,20 @@ def compute_location_stats(
                 venues[enrichment.venue_name] += 1
             if enrichment.cuisine:
                 cuisines[enrichment.cuisine] += 1
+            if enrichment.latitude is not None and enrichment.longitude is not None:
+                # Round to reduce duplicates at the same venue
+                key = f"{round(enrichment.latitude, 4)},{round(enrichment.longitude, 4)}"
+                if key not in point_index:
+                    point_index[key] = {
+                        "lat": enrichment.latitude,
+                        "lng": enrichment.longitude,
+                        "count": 0,
+                        "label": enrichment.neighborhood
+                        or enrichment.venue_name
+                        or enrichment.city
+                        or "Location",
+                    }
+                point_index[key]["count"] += 1
     else:
         # Fallback: use friend_stats only
         seen_events: set[str] = set()
@@ -201,9 +216,12 @@ def compute_location_stats(
                 if event.cuisine:
                     cuisines[event.cuisine] += 1
 
+    map_points = sorted(point_index.values(), key=lambda p: p["count"], reverse=True)[:200]
+
     return LocationStats(
         top_neighborhoods=neighborhoods.most_common(top_n),
         top_venues=venues.most_common(top_n),
         top_cuisines=cuisines.most_common(top_n),
         total_with_location=total_with_location,
+        map_points=map_points,
     )

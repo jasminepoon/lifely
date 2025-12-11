@@ -321,6 +321,8 @@ def _save_stats(
             "top_neighborhoods": location_stats.top_neighborhoods,
             "top_venues": location_stats.top_venues,
             "top_cuisines": location_stats.top_cuisines,
+            "map_points": location_stats.map_points or [],
+            "total_with_location": location_stats.total_with_location,
         }
 
     if inferred_friends:

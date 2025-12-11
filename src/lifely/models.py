@@ -151,6 +151,7 @@ class LocationStats:
     top_venues: list[tuple[str, int]]
     top_cuisines: list[tuple[str, int]]
     total_with_location: int
+    map_points: list[dict] | None = None
 
 
 @dataclass
