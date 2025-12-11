@@ -8,7 +8,7 @@
 
 | Enhancement | Why Deferred | Unlock Condition |
 |-------------|--------------|------------------|
-| **Heat map for places** | No lat/lng data; bars work now | Add Places API or manual centroid mapping |
+| **Heat map for places** | Only partial lat/lng (Places-backed); bars work now | Broaden Places geocoding or add centroid mapping |
 | **Compass (radial UI)** | High complexity, mobile-unfriendly | v2 "explorer mode" for power users |
 | **Calendar heatmap** | Scope creep; not core to story | Phase 5 polish |
 | **Animated map path** | Needs geospatial data | Places API integration |
@@ -20,7 +20,7 @@
 
 | Enhancement | Why Deferred | Unlock Condition |
 |-------------|--------------|------------------|
-| **Lat/lng from enrichment** | LLM coords unreliable; Places API adds cost | Justify with map feature demand |
+| **Full lat/lng coverage** | LLM coords unreliable; Places API adds cost | Use Places for all location strings (not just Maps links) when map is prioritized |
 | **Multi-city support** | NYC-focused for now | User feedback, broader adoption |
 | **Multi-calendar aggregation** | Complexity; OAuth scopes | Phase 5 |
 | **LLM result caching** | ~$0.10/run is cheap enough | If costs rise or runs increase |

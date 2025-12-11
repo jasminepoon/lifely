@@ -23,6 +23,25 @@
 
 ---
 
+## Ideation / Brainstorm (UI Variations)
+
+Exploration notes — only Storyboard is locked for v1.
+
+- **Flight Deck (Flighty feel)**: Aviation/HUD vibe; glass overlays, mono numerals, ticker-like progress. Test boarding-pass hero, stacked stat rails, sparkbars-as-gates, subtle gridlines. Risk: could feel corporate if overdone.
+- **Storyboard (Chosen)**: Cinematic scroll; cards as frames; progress dots; sticky quick-stats after hero. Test hero count-up, card stack with staggered reveals, stacked bars vs map heat, narrative card with typewriter pacing.
+- **Compass (Radial explorer)**: Radial navigation with slices for People/Places/Time; glowing arcs, central CTA. Interesting but heavy; needs mobile fallback to linear cards. Parked for v2 unless we add lat/lng + strong rationale.
+
+### Prototype Checklist (spin up locally)
+- Hero: year + 3 stats with count-up, boarding-pass framing
+- People: avatar cards with sparkbars and venue/hood chips
+- Places: stacked bars vs map heat (requires lat/lng; today we have names/neighborhoods only)
+- Rituals: horizontal bars for activities
+- Patterns: insight list with icons, sticky quick-stats on mobile
+- Narrative: prose card with gentle typewriter effect; respects reduced motion
+- Progress: dots/ticker at top; test both
+
+---
+
 ## Color System
 
 ### Core Palette

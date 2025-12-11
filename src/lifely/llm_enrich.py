@@ -101,6 +101,23 @@ CLASSIFICATION_MODEL = os.environ.get("LIFELY_LLM_CLASSIFICATION_MODEL", "gpt-4o
 LLM_CACHE_FILENAME = "llm_cache.json"
 
 
+def _shorten_text(text: str | None, max_len: int = 180) -> str:
+    """Trim text for LLM prompts to keep payloads small."""
+    if not text:
+        return ""
+    return text.strip()[:max_len]
+
+
+def _shorten_location(location: str | None, max_len: int = 160) -> str:
+    """Trim locations (esp. long map URLs) before sending to the LLM."""
+    if not location:
+        return ""
+    trimmed = location.strip()
+    if trimmed.startswith("http"):
+        trimmed = trimmed.split("?", 1)[0]
+    return trimmed[:max_len]
+
+
 async def enrich_all_events(
     events: list[NormalizedEvent],
     api_key: str | None = None,
@@ -157,8 +174,8 @@ async def enrich_all_events(
             unique_events.append(
                 {
                     "event_id": e.id,
-                    "summary": e.summary,
-                    "location": loc,
+                    "summary": _shorten_text(e.summary),
+                    "location": _shorten_location(loc),
                 }
             )
         seen_locations[loc].append(e.id)
@@ -196,6 +213,8 @@ async def enrich_all_events(
                     neighborhood=template.neighborhood,
                     city=template.city,
                     cuisine=template.cuisine,
+                    latitude=template.latitude,
+                    longitude=template.longitude,
                 )
 
     _save_llm_cache(llm_cache, data_dir)
@@ -222,6 +241,7 @@ async def classify_solo_events(
     classification_by_id: dict[str, dict] = {}
     summary_for_event: dict[str, str] = {}
     event_meta_by_id: dict[str, dict] = {}
+    prompt_event_by_summary: dict[str, dict] = {}
 
     for e in events:
         if not e.summary:
@@ -237,6 +257,15 @@ async def classify_solo_events(
         summary_to_events[summary_key].append(event_payload)
         summary_for_event[e.id] = summary_key
         event_meta_by_id[e.id] = event_payload
+        location_hint = _shorten_location(e.location_raw)
+        prompt_event_by_summary.setdefault(
+            summary_key,
+            {
+                "event_id": e.id,
+                "summary": _shorten_text(e.summary),
+                **({"location_hint": location_hint} if location_hint else {}),
+            },
+        )
 
         cached = classification_cache.get(summary_key)
         if cached:
@@ -253,7 +282,8 @@ async def classify_solo_events(
     for summary_key, grouped_events in summary_to_events.items():
         if summary_key in classification_cache:
             continue
-        events_for_classification.append(grouped_events[0])
+        if summary_key in prompt_event_by_summary:
+            events_for_classification.append(prompt_event_by_summary[summary_key])
 
     if events_for_classification:
         client = AsyncOpenAI(api_key=api_key)
@@ -483,9 +513,6 @@ def apply_enrichments_to_friend_stats(
     return friend_stats
 
 
-MAX_CONCURRENT_BATCHES = 2  # Limit concurrent API calls to avoid rate limits
-
-
 async def _call_openai_parallel(
     client: AsyncOpenAI,
     events: list[dict],
@@ -583,6 +610,8 @@ def _parse_location_results(data: dict) -> list[LocationEnrichment]:
             neighborhood=r.get("neighborhood"),
             city=r.get("city"),
             cuisine=r.get("cuisine"),
+            latitude=r.get("latitude"),
+            longitude=r.get("longitude"),
         )
         for r in results
     ]
@@ -699,6 +728,8 @@ def _cache_from_enrichment(enrichment: LocationEnrichment) -> dict:
         "neighborhood": enrichment.neighborhood,
         "city": enrichment.city,
         "cuisine": enrichment.cuisine,
+        "latitude": enrichment.latitude,
+        "longitude": enrichment.longitude,
     }
 
 
@@ -709,4 +740,6 @@ def _location_enrichment_from_cache(event_id: str, cached: dict) -> LocationEnri
         neighborhood=cached.get("neighborhood"),
         city=cached.get("city"),
         cuisine=cached.get("cuisine"),
+        latitude=cached.get("latitude"),
+        longitude=cached.get("longitude"),
     )

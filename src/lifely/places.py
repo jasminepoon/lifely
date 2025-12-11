@@ -72,12 +72,16 @@ def resolve_place_from_location_string(
             neighborhood=cached.get("neighborhood"),
             city=cached.get("city"),
             cuisine=cached.get("cuisine"),
+            latitude=cached.get("latitude"),
+            longitude=cached.get("longitude"),
         )
 
     place_id, name, address, types = _find_place(location, api_key)
     if not place_id and not name:
         return None
 
+    latitude = None
+    longitude = None
     if place_id:
         details = _get_place_details(place_id, api_key)
         if details:
@@ -85,6 +89,10 @@ def resolve_place_from_location_string(
             address = details.get("formatted_address", address)
             types = details.get("types", types)
             neighborhood, city = _derive_neighborhood_city(details.get("address_components", []))
+            geometry = details.get("geometry", {})
+            loc = geometry.get("location", {}) if isinstance(geometry, dict) else {}
+            latitude = loc.get("lat")
+            longitude = loc.get("lng")
         else:
             neighborhood, city = None, None
     else:
@@ -96,6 +104,8 @@ def resolve_place_from_location_string(
         neighborhood=neighborhood,
         city=city,
         cuisine=cuisine,
+        latitude=latitude,
+        longitude=longitude,
     )
 
     cache[location] = {
@@ -105,6 +115,8 @@ def resolve_place_from_location_string(
         "cuisine": enrichment.cuisine,
         "place_id": place_id,
         "address": address,
+        "latitude": latitude,
+        "longitude": longitude,
     }
     return enrichment
 
@@ -134,7 +146,7 @@ def _get_place_details(place_id: str, api_key: str) -> dict | None:
     url = (
         "https://maps.googleapis.com/maps/api/place/details/json"
         f"?place_id={quote_plus(place_id)}"
-        "&fields=name,formatted_address,address_components,types"
+        "&fields=name,formatted_address,address_components,types,geometry"
         f"&key={api_key}"
     )
     return _http_get_json(url)

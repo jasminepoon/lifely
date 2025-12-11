@@ -162,6 +162,8 @@ class LocationEnrichment:
     neighborhood: str | None = None
     city: str | None = None
     cuisine: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 # ═══════════════════════════════════════════════════════════
