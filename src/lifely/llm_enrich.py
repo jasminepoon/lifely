@@ -98,7 +98,7 @@ Return JSON: {{"results": [
 
 
 BATCH_SIZE = int(os.environ.get("LIFELY_LLM_BATCH_SIZE", "30"))  # Events per API call
-MAX_CONCURRENT_BATCHES = int(os.environ.get("LIFELY_LLM_MAX_CONCURRENCY", "1"))
+MAX_CONCURRENT_BATCHES = int(os.environ.get("LIFELY_LLM_MAX_CONCURRENCY", "2"))
 REQUEST_TIMEOUT = float(os.environ.get("LIFELY_LLM_TIMEOUT", "90"))
 LOCATION_MODEL = os.environ.get("LIFELY_LLM_LOCATION_MODEL", "gpt-5.1")
 CLASSIFICATION_MODEL = os.environ.get("LIFELY_LLM_CLASSIFICATION_MODEL", "gpt-5-mini")
