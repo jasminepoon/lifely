@@ -12,6 +12,12 @@
 
 **Deferred**: Compass (radial UI) — too risky for v1, save for future exploration.
 
+### What “Flighty” Means Here
+- Aviation polish without coldness: boarding-pass hero, ticker-like progress, subtle gridlines; zero corporate chrome.
+- Concierge with a wink: data-forward, but warm microcopy; avoid sterile dashboards.
+- Motion like an airport board flip: purposeful, staggered, never jittery; honor reduced motion.
+- Shadcn implementation vibe: minimal scaffolding, opinionated tokens, tight spacing, confident typography.
+
 **Beat flow (v1)**  
 1) Hero/Year + quick stats (auto count-up)  
 2) People card(s) with sparkbars + venues/hood chips  
@@ -39,6 +45,16 @@ Exploration notes — only Storyboard is locked for v1.
 - Patterns: insight list with icons, sticky quick-stats on mobile
 - Narrative: prose card with gentle typewriter effect; respects reduced motion
 - Progress: dots/ticker at top; test both
+
+### Component Options (pick first, then build)
+- **Progress indicator**: Ticker (Flighty) vs dots (Wrapped). Default: dots; keep ticker as alt.
+- **Hero frame**: Boarding-pass slab with mono labels vs minimalist center stack. Default: boarding-pass slab with gradient glow.
+- **People**: Vertical stack with sparkbars + venue/hood chips vs horizontal carousel. Default: vertical stack; carousel only if space-constrained.
+- **Places**: Stacked bars (default) vs map heat (needs coords). Prototype both; ship bars unless lat/lng density is good.
+- **Rituals**: Horizontal bars with venue labels vs tile cards. Default: bars with subtle category badges.
+- **Patterns**: Iconed list vs two-column grid. Default: list for readability/screenshot.
+- **Narrative**: Glass card with typewriter pace vs static text. Default: gentle typewriter with reduced-motion fallback.
+- **Experiments**: Numbered list with pill CTAs vs grid. Default: numbered list; keep one CTA gradient chip for emphasis.
 
 ---
 
