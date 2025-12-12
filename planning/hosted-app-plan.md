@@ -175,7 +175,7 @@ export default {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: model || 'gpt-5.2-instant',
+        model: model || 'gpt-5.2',
         input: prompt,
         reasoning: { effort: 'low' },
         text: { verbosity: 'low' },
@@ -326,7 +326,7 @@ lifely/
 | Cloudflare Pages | Free |
 | Cloudflare Workers | Free (100k requests/day) |
 | Cloudflare KV | Free (100k reads/day) |
-| OpenAI (per friend) | Variable (model: gpt-5.2-instant; request count must stay low due to 3 RPM) |
+| OpenAI (per friend) | Variable (model: gpt-5.2; request count must stay low due to 3 RPM) |
 | Domain | Already owned |
 
 **Total per friend**: ~$0.50 (assuming 3 runs max)

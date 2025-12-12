@@ -58,7 +58,7 @@ Enables location enrichment and AI-generated narrative.
   ```
 
 Notes:
-- Default model is `gpt-5.2-instant` (fallback: `gpt-5-mini` → `gpt-5-nano`).
+- Default model is `gpt-5.2` (fallback: `gpt-5-mini` → `gpt-5-nano`).
 - Current GPT-5 family limits can be as low as ~3 RPM; first-time runs may take minutes. Location/classification results are cached in localStorage to make reruns fast.
 
 ### 3. Google Maps (Optional)
@@ -128,4 +128,4 @@ See [TAILWIND_V4_LEARNINGS.md](./TAILWIND_V4_LEARNINGS.md) for Tailwind CSS v4 c
 - Vite 7
 - Tailwind CSS v4
 - Google Identity Services (OAuth)
-- OpenAI GPT-5 Responses API (default: `gpt-5.2-instant`)
+- OpenAI GPT-5 Responses API (default: `gpt-5.2`)

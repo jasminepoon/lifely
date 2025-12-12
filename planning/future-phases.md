@@ -20,7 +20,7 @@ Enrich events with place data from Google Maps/Places API to answer:
 
 ### Implementation Summary
 
-**Approach Changed**: Instead of relying entirely on Google Places, we use **GPT-5 (Responses API)** for most location extraction (default model: `gpt-5.2-instant`). Places API is used opportunistically for Google Maps links when a key is present.
+**Approach Changed**: Instead of relying entirely on Google Places, we use **GPT-5 (Responses API)** for most location extraction (default model: `gpt-5.2`). Places API is used opportunistically for Google Maps links when a key is present.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
@@ -227,7 +227,7 @@ def build_wrapped_prompt(summary: dict) -> str:
 ### Open Questions for Phase 3
 
 1. **Which LLM to target?** Claude, GPT-4, local model?
-   - Recommendation: GPT-5.2-instant (already integrated)
+   - Recommendation: GPT-5.2 (already integrated)
 
 2. **Should the tool call the LLM directly?** Or just generate the prompt?
    - Recommendation: Generate prompt, let user paste (more control)

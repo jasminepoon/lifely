@@ -12,7 +12,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'https://lifely.thirdplane.io',
 ];
 
-const ALLOWED_MODELS = new Set(['gpt-5.2-instant', 'gpt-5-mini', 'gpt-5-nano']);
+const ALLOWED_MODELS = new Set(['gpt-5.2', 'gpt-5-mini', 'gpt-5-nano']);
 
 function parseAllowedOrigins(envValue: string | undefined): string[] {
   if (!envValue) return DEFAULT_ALLOWED_ORIGINS;
@@ -96,7 +96,7 @@ export default {
     const model =
       typeof body?.model === 'string' && ALLOWED_MODELS.has(body.model)
         ? body.model
-        : 'gpt-5.2-instant';
+        : 'gpt-5.2';
     const input = typeof body?.input === 'string' ? body.input : null;
     if (!input) {
       return new Response('Bad Request (missing input)', { status: 400, headers: cors });
@@ -138,4 +138,3 @@ export default {
     return new Response(upstream.body, { status: upstream.status, headers });
   },
 };
-

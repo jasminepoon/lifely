@@ -302,7 +302,7 @@ LLM enrichment time is dominated by RPM limits and the number of unique location
 ## Changelog
 
 ### 2025-12-12 - LLM Reliability (Rate Limits + Caching)
-- **Default model**: `gpt-5.2-instant` (fallback: `gpt-5-mini` → `gpt-5-nano`)
+- **Default model**: `gpt-5.2` (fallback: `gpt-5-mini` → `gpt-5-nano`)
 - **Rate-limit aware batching**: larger batches + RPM throttle (3 RPM) to avoid 429s
 - **Local cache**: location + classification cached in localStorage to make reruns fast and reliable
 - **Fewer calls**: narrative + patterns + experiments generated in a single request
@@ -328,7 +328,7 @@ LLM enrichment time is dominated by RPM limits and the number of unique location
   - GPT-5 models require the new API format for optimal performance
   - Request: uses `input` instead of `messages`
   - Response: nested structure `output[].content[].text` (where `type === 'message'` and content `type === 'output_text'`)
-- **Updated models to GPT-5 family**: Initial migration used `gpt-5-mini` defaults (later moved to `gpt-5.2-instant`; see 2025-12-12)
+- **Updated models to GPT-5 family**: Initial migration used `gpt-5-mini` defaults (later moved to `gpt-5.2`; see 2025-12-12)
 - **New API parameters**: Replaced `temperature` with GPT-5 parameters
   - `reasoning.effort`: 'minimal' | 'low' | 'medium' | 'high' (controls chain-of-thought depth; `'none'` not supported by gpt-5-mini)
   - `text.verbosity`: 'low' | 'medium' | 'high' (controls output length)

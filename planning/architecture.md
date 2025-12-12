@@ -31,7 +31,7 @@
 
 - **OpenAI rate limits**: current GPT-5 family limits are ~3 RPM, so the pipeline must pack work into fewer, larger requests.
 - **LLM key safety**: production must route LLM calls via a proxy (Cloudflare Worker) so keys are never shipped to the browser.
-- **Current React defaults**: `gpt-5.2-instant` as primary model with fallbacks; location/classification are cached client-side to make reruns cheap.
+- **Current React defaults**: `gpt-5.2` as primary model with fallbacks; location/classification are cached client-side to make reruns cheap.
 
 ## High-Level Architecture
 
@@ -168,7 +168,7 @@
 | `suggest_merges()` | Link inferred names to email friends | `list[MergeSuggestion]` |
 | `apply_enrichments_to_friend_stats()` | Add location data to friend events | `list[FriendStats]` (enriched) |
 
-> **Note**: GPT-5.2-instant (default) handles most enrichment; Places API is used opportunistically for Google Maps links when `GOOGLE_MAPS_API_KEY` is set.
+> **Note**: GPT-5.2 (default) handles most enrichment; Places API is used opportunistically for Google Maps links when `GOOGLE_MAPS_API_KEY` is set.
 
 ---
 
@@ -307,7 +307,7 @@
 ├─────────────────┬───────────────────┬───────────────────────────────────────┤
 │ Service         │ Purpose           │ Auth                                  │
 ├─────────────────┼───────────────────┼───────────────────────────────────────┤
-│ GPT-5.2-instant │ All enrichment:   │ API Key (OPENAI_API_KEY)              │
+│ GPT-5.2         │ All enrichment:   │ API Key (OPENAI_API_KEY)              │
 │ Responses API   │ • Location extract│ ~$0.05 per run                        │
 │                 │ • SOCIAL → names  │ Async batched: 50 events/request      │
 │                 │ • ACTIVITY → type │ 2 concurrent batches max              │
@@ -462,7 +462,7 @@ STEP 5a: LOCATION ENRICHMENT (Async Parallel)
 │                                                                          │
 │  ┌──────────────┐    Processing:                                         │
 │  │   OpenAI     │    • Async parallel batches (2 concurrent)             │
-│  │GPT-5.2-instant│    • 50 events per batch                               │
+│  │GPT-5.2        │    • 50 events per batch                               │
 │  │   Responses  │    • Retry with exponential backoff (5s, 10s, 20s...)  │
 │  │   API        │    • Deduplication by location string                  │
 │  │              │                                                        │
@@ -478,7 +478,7 @@ STEP 5b: SOLO EVENT CLASSIFICATION (Async Parallel)
 │                                                                          │
 │  ┌──────────────┐    Classification:                                     │
 │  │   OpenAI     │    • SOCIAL → extract names ["Masha", "John"]          │
-│  │GPT-5.2-instant│    • ACTIVITY → category, activity_type, venue         │
+│  │GPT-5.2        │    • ACTIVITY → category, activity_type, venue         │
 │  │   Responses  │    • OTHER → skip                                      │
 │  │   API        │                                                        │
 │  │              │    Venue extraction from summary:                      │
