@@ -42,7 +42,7 @@ let throttleLock: Promise<void> = Promise.resolve();
 const PRIMARY_MODEL = 'gpt-5.2';
 const MODEL_FALLBACK_CHAIN = [PRIMARY_MODEL, 'gpt-5-mini', 'gpt-5-nano'];
 
-const LLM_CACHE_KEY = 'lifely_llm_cache_v1';
+const LLM_CACHE_KEY = 'lifely_llm_cache_v2';
 
 export interface LlmConfig {
   apiKey?: string | null;
@@ -68,26 +68,26 @@ type CachedClassification = {
 };
 
 type LlmCache = {
-  version: 1;
+  version: 2;
   locations: Record<string, CachedLocation>;
   classifications: Record<string, CachedClassification>;
 };
 
 function loadLlmCache(): LlmCache {
   if (typeof window === 'undefined') {
-    return { version: 1, locations: {}, classifications: {} };
+    return { version: 2, locations: {}, classifications: {} };
   }
   try {
     const raw = window.localStorage.getItem(LLM_CACHE_KEY);
-    if (!raw) return { version: 1, locations: {}, classifications: {} };
+    if (!raw) return { version: 2, locations: {}, classifications: {} };
     const parsed = JSON.parse(raw) as Partial<LlmCache>;
     return {
-      version: 1,
+      version: 2,
       locations: parsed.locations || {},
       classifications: parsed.classifications || {},
     };
   } catch {
-    return { version: 1, locations: {}, classifications: {} };
+    return { version: 2, locations: {}, classifications: {} };
   }
 }
 
