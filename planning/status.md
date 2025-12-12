@@ -34,6 +34,8 @@
 - [x] **LLM fragility (priority)**: stay within 3 RPM (throttle) and keep request count low (larger batches + combined story call)
 - [x] Cache LLM results client-side (localStorage) for reruns
 - [x] Add “Retry AI enrichment” UX (rerun without OAuth/fetch; uses cached raw events in sessionStorage)
+- [x] Add AI toggle (optional “fast mode”)
+- [x] Provide non-AI fallbacks for patterns/experiments
 - [x] **Places v1: stacked bars only** (heatmap deferred — adds ~200KB bundle, API costs, marginal insight over bars)
 
 ### Infrastructure (Phase 5)
@@ -76,6 +78,7 @@ r - toggle between landing and results page
 **Landing Page Features:**
 - Real Google OAuth flow (Google Identity Services)
 - 6 states (idle, oauth_pending, oauth_declined, processing, complete, error)
+- AI insights toggle (optional; can skip AI for faster runs)
 - Animated particle background with connections
 - Glassmorphism cards
 - Animated gradient hero background

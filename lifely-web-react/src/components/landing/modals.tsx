@@ -120,7 +120,7 @@ export function HowItWorksModal({ isOpen, onClose }: { isOpen: boolean; onClose:
         {[
           { title: 'You sign in with Google', detail: "We never see your password." },
           { title: 'Your calendar loads in your browser', detail: "The full calendar stays on your device." },
-          { title: 'AI finds patterns in your year', detail: "Event titles and locations are sent to OpenAI to generate your story. We don't log or store any of this." },
+          { title: 'AI insights (optional)', detail: "If enabled, event titles and locations are sent to OpenAI to generate your story. We don't log or store any of this." },
           { title: "Close the tab and it's gone", detail: null },
         ].map((step, i) => (
           <li key={i} style={{ display: 'flex', gap: '0.75rem' }}>

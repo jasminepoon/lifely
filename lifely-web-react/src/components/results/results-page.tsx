@@ -152,6 +152,7 @@ export function ResultsPage() {
         {/* Beat 7: Experiments */}
         <Experiments
           experiments={results.experiments}
+          year={results.stats.year}
           onStartOver={clearResults}
         />
       </main>

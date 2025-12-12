@@ -50,7 +50,9 @@ export function useResults() {
       // Try to load from sessionStorage (set by useLifely after calendar processing)
       const stored = sessionStorage.getItem(STORAGE_KEY);
       const llmFlag = sessionStorage.getItem(STORAGE_KEY_LLM_FLAG);
-      const enabled = llmFlag === 'true' || !!buildLlmConfig();
+      // Prefer the stored flag (so "AI disabled" runs don't get treated as enabled just because env vars exist).
+      const enabled =
+        llmFlag == null ? !!buildLlmConfig() : llmFlag === 'true';
       setLlmEnabled(enabled);
 
       if (stored) {

@@ -46,7 +46,7 @@ export const Places = forwardRef<HTMLDivElement, PlacesProps>(({ data, className
         {/* Header */}
         <div className="mb-8 reveal-up">
           <h2 id="places-heading" className="text-2xl font-semibold text-white mb-2">
-            Your NYC footprint
+            Your footprint
           </h2>
           <p className="text-[15px] text-gray-400">
             Where you spent your year
@@ -77,7 +77,7 @@ export const Places = forwardRef<HTMLDivElement, PlacesProps>(({ data, className
             </div>
           ) : (
             <p className="text-[15px] text-gray-500">
-              Location summary unavailable. Rerun with AI enrichment enabled.
+              No place summary yet. Retry AI to fill this in.
             </p>
           )}
 

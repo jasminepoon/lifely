@@ -65,10 +65,10 @@ export const Rituals = forwardRef<HTMLDivElement, RitualsProps>(({ data, classNa
         {/* Header */}
         <div className="mb-8 reveal-up">
           <h2 id="rituals-heading" className="text-2xl font-semibold text-white mb-2">
-            Your year in activities
+            Your rituals
           </h2>
           <p className="text-[15px] text-gray-400">
-            What you spent your time on
+            How you showed up for yourself
           </p>
         </div>
 
@@ -100,16 +100,23 @@ export const Rituals = forwardRef<HTMLDivElement, RitualsProps>(({ data, classNa
             </>
           ) : (
             <p className="text-[15px] text-gray-500">
-              Activities are unavailable. Try rerunning when AI enrichment succeeds.
+              No activity breakdown yet. Retry AI to fill this in.
             </p>
           )}
 
           {/* Summary with coverage */}
           <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
-            <p style={{ fontSize: '15px', color: '#9ca3af' }}>
-              <span style={{ color: '#22d3ee', fontWeight: 600 }}>{data.totalInteresting}</span> moments
-              that made your year interesting.
-            </p>
+            {hasCategories ? (
+              <p style={{ fontSize: '15px', color: '#9ca3af' }}>
+                You showed up for yourself{' '}
+                <span style={{ color: '#22d3ee', fontWeight: 600 }}>{data.totalInteresting}</span>{' '}
+                times.
+              </p>
+            ) : (
+              <p style={{ fontSize: '15px', color: '#9ca3af' }}>
+                AI can classify your events into rituals.
+              </p>
+            )}
             {coverage && (
               <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '0.5rem' }}>
                 {coverage.classified} of {coverage.total} events analyzed

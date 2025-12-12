@@ -97,8 +97,7 @@ export const Narrative = forwardRef<HTMLDivElement, NarrativeProps>(({ narrative
                   key={index}
                   className="text-[17px] text-gray-400 leading-relaxed"
                 >
-                  "{para}
-                  {index === paragraphs.length - 1 && !isTyping && '"'}
+                  {para}
                   {index === paragraphs.length - 1 && isTyping && (
                     <span className="animate-pulse">|</span>
                   )}
@@ -107,7 +106,7 @@ export const Narrative = forwardRef<HTMLDivElement, NarrativeProps>(({ narrative
             </div>
           ) : (
             <p className="text-[15px] text-gray-500">
-              Story not available yet. Please retry once AI enrichment completes.
+              No story yet. Retry AI to fill this in.
             </p>
           )}
         </div>

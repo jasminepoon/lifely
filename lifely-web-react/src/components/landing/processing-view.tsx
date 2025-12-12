@@ -30,46 +30,49 @@ const STEPS = [
 ]
 
 function getStepInfo(progress: number, message: string): StepInfo {
-  // Map overall progress to step info
-  // 0-30: preparing, 30-50: places, 50-75: patterns, 75-95: story
+  const lower = message.toLowerCase()
+  const match = message.match(/\((\d+)\/(\d+)\)/)
+  const countProgress =
+    match && Number(match[2]) > 0
+      ? (Number(match[1]) / Number(match[2])) * 100
+      : null
+  const detail = match ? `${match[1]} of ${match[2]}` : ''
 
-  if (progress < 30) {
-    return { currentStep: 0, label: 'Preparing', detail: '', progress: 0 }
-  }
-
-  if (progress < 50) {
-    const match = message.match(/\((\d+)\/(\d+)\)/)
-    const stepProgress = ((progress - 30) / 20) * 100
+  // Prefer message-based detection (more reliable than percent mapping).
+  if (lower.includes('analyzing locations')) {
     return {
       currentStep: 1,
       label: STEPS[0].activeLabel,
-      detail: match ? `${match[1]} of ${match[2]}` : '',
-      progress: stepProgress,
+      detail,
+      progress: countProgress ?? Math.min(100, Math.max(0, progress)),
     }
   }
 
-  if (progress < 75) {
-    const match = message.match(/\((\d+)\/(\d+)\)/)
-    const stepProgress = ((progress - 50) / 25) * 100
+  if (lower.includes('classifying events')) {
     return {
       currentStep: 2,
       label: STEPS[1].activeLabel,
-      detail: match ? `${match[1]} of ${match[2]}` : '',
-      progress: stepProgress,
+      detail,
+      progress: countProgress ?? Math.min(100, Math.max(0, progress)),
     }
   }
 
-  if (progress < 95) {
-    const stepProgress = ((progress - 75) / 20) * 100
+  if (lower.includes('writing your story')) {
     return {
       currentStep: 3,
       label: STEPS[2].activeLabel,
       detail: '',
-      progress: stepProgress,
+      progress: Math.min(100, Math.max(0, progress)),
     }
   }
 
-  return { currentStep: 3, label: 'Almost done', detail: '', progress: 100 }
+  // Default: preparing (OAuth + fetching + normalization).
+  return {
+    currentStep: 0,
+    label: 'Preparing',
+    detail: '',
+    progress: Math.min(100, Math.max(0, progress)),
+  }
 }
 
 export function ProcessingView({ progress, message, eventCount }: ProcessingViewProps) {
@@ -133,7 +136,7 @@ export function ProcessingView({ progress, message, eventCount }: ProcessingView
                 animation: 'pulse 2s ease-in-out infinite',
               }}
             >
-              {STEPS[activeStepIndex]?.icon || '⏳'}
+              {stepInfo.currentStep === 0 ? '⏳' : (STEPS[activeStepIndex]?.icon || '⏳')}
             </span>
             <span
               style={{
@@ -171,7 +174,7 @@ export function ProcessingView({ progress, message, eventCount }: ProcessingView
             overflow: 'hidden',
           }}
           role="progressbar"
-          aria-valuenow={progress}
+          aria-valuenow={stepInfo.progress}
           aria-valuemin={0}
           aria-valuemax={100}
         >
@@ -179,7 +182,7 @@ export function ProcessingView({ progress, message, eventCount }: ProcessingView
             style={{
               position: 'absolute',
               inset: 0,
-              width: `${progress}%`,
+              width: `${stepInfo.progress}%`,
               borderRadius: '9999px',
               background: 'linear-gradient(90deg, #00D4FF 0%, #00FF88 50%, #00D4FF 100%)',
               backgroundSize: '200% 100%',

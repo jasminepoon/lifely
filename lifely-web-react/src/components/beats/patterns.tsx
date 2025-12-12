@@ -31,6 +31,9 @@ export const Patterns = forwardRef<HTMLDivElement, PatternsProps>(({ patterns, c
           <h2 id="patterns-heading" className="text-2xl font-semibold text-white mb-2">
             Things you might not have noticed
           </h2>
+          <p className="text-[15px] text-gray-400">
+            Small signals across your calendar
+          </p>
         </div>
 
         {/* Patterns */}
@@ -47,7 +50,7 @@ export const Patterns = forwardRef<HTMLDivElement, PatternsProps>(({ patterns, c
             </div>
           ) : (
             <p className="text-[15px] text-gray-500">
-              Patterns unavailable. Try again after AI enrichment completes.
+              No patterns yet. Retry AI to fill this in.
             </p>
           )}
         </div>

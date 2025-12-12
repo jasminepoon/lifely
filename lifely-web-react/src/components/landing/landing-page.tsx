@@ -16,6 +16,7 @@ export function LandingPage() {
   const lifely = useLifely()
   const [showHowModal, setShowHowModal] = useState(false)
   const [showPermissionsModal, setShowPermissionsModal] = useState(false)
+  const [enableAi, setEnableAi] = useState(lifely.isLlmConfigured)
 
   // Navigate to results when processing completes
   useEffect(() => {
@@ -74,15 +75,83 @@ export function LandingPage() {
                 <Button
                   size="xl"
                   variant="glow"
-                  onClick={lifely.connect}
+                  onClick={() => lifely.connect({ enableAi })}
                   style={{ marginTop: '1rem' }}
                 >
                   Connect Calendar
                 </Button>
 
                 <p className="text-sm text-gray-500">
-                  Read-only · Stays in your browser
+                  Read-only · Runs in your browser
                 </p>
+
+                {/* AI toggle */}
+                <div
+                  style={{
+                    width: '100%',
+                    maxWidth: '22rem',
+                    borderRadius: '0.875rem',
+                    background: 'rgba(255, 255, 255, 0.04)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    padding: '0.75rem 1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '1rem',
+                  }}
+                  aria-label="AI insights"
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ margin: 0, color: 'white', fontSize: '0.875rem', fontWeight: 500 }}>
+                      AI insights
+                    </p>
+                    <p style={{ margin: 0, marginTop: '0.125rem', color: 'rgba(255, 255, 255, 0.55)', fontSize: '0.75rem' }}>
+                      Places, patterns, story (slower)
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enableAi}
+                    disabled={!lifely.isLlmConfigured}
+                    onClick={() => setEnableAi((v) => !v)}
+                    style={{
+                      position: 'relative',
+                      width: '44px',
+                      height: '24px',
+                      borderRadius: '9999px',
+                      border: '1px solid rgba(255, 255, 255, 0.14)',
+                      background: enableAi ? 'rgba(34, 211, 238, 0.28)' : 'rgba(255, 255, 255, 0.12)',
+                      cursor: lifely.isLlmConfigured ? 'pointer' : 'not-allowed',
+                      opacity: lifely.isLlmConfigured ? 1 : 0.5,
+                      transition: 'background 200ms ease',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: 'absolute',
+                        top: '2px',
+                        left: '2px',
+                        width: '20px',
+                        height: '20px',
+                        borderRadius: '9999px',
+                        background: 'rgba(255, 255, 255, 0.92)',
+                        transform: enableAi ? 'translateX(20px)' : 'translateX(0)',
+                        transition: 'transform 200ms ease',
+                        boxShadow: enableAi ? '0 0 16px rgba(34, 211, 238, 0.35)' : 'none',
+                      }}
+                    />
+                  </button>
+                </div>
+
+                {!lifely.isLlmConfigured && (
+                  <p className="text-xs text-gray-500" style={{ marginTop: '-0.75rem' }}>
+                    AI is not configured (set <code>VITE_LLM_PROXY_URL</code> or <code>VITE_OPENAI_API_KEY</code>).
+                  </p>
+                )}
 
                 <button
                   onClick={() => setShowHowModal(true)}
@@ -149,7 +218,7 @@ export function LandingPage() {
               </p>
             </MessageBox>
 
-            <Button size="xl" variant="glow" onClick={lifely.connect}>
+            <Button size="xl" variant="glow" onClick={() => lifely.connect({ enableAi })}>
               Try Again
             </Button>
 
@@ -246,7 +315,7 @@ export function LandingPage() {
               </p>
             </MessageBox>
 
-            <Button size="xl" variant="glow" onClick={lifely.connect}>
+            <Button size="xl" variant="glow" onClick={() => lifely.connect({ enableAi })}>
               Try Again
             </Button>
 

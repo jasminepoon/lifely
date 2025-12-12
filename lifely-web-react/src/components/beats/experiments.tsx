@@ -5,13 +5,16 @@ import { Button } from '@/components/ui/button';
 
 interface ExperimentsProps {
   experiments: Experiment[];
+  year?: number;
   onStartOver: () => void;
   className?: string;
 }
 
 export const Experiments = forwardRef<HTMLDivElement, ExperimentsProps>(
-  ({ experiments, onStartOver, className }, ref) => {
+  ({ experiments, year, onStartOver, className }, ref) => {
     const hasExperiments = experiments.length > 0;
+    const nextYearLabel =
+      typeof year === 'number' ? String(year + 1) : 'Next year';
 
     return (
       <section
@@ -32,7 +35,7 @@ export const Experiments = forwardRef<HTMLDivElement, ExperimentsProps>(
           {/* Header */}
           <div className="mb-8 reveal-up">
             <h2 id="experiments-heading" className="text-2xl font-semibold text-white mb-2">
-              For 2026, consider:
+              Three experiments for {nextYearLabel}
             </h2>
           </div>
 
@@ -51,7 +54,7 @@ export const Experiments = forwardRef<HTMLDivElement, ExperimentsProps>(
               </div>
             ) : (
               <p className="text-[15px] text-gray-500">
-                Experiments unavailable right now. Rerun when AI enrichment succeeds.
+                No experiments yet. Retry AI to fill this in.
               </p>
             )}
           </div>

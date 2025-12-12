@@ -60,6 +60,7 @@ Enables location enrichment and AI-generated narrative.
 Notes:
 - Default model is `gpt-5.2` (fallback: `gpt-5-mini` → `gpt-5-nano`).
 - Current GPT-5 family limits can be as low as ~3 RPM; first-time runs may take minutes. Location/classification results are cached in localStorage to make reruns fast.
+- In the UI, you can toggle AI insights off for a faster baseline run, then use “Retry AI” on the results page.
 
 ### 3. Google Maps (Optional)
 

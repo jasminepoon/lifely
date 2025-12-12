@@ -52,6 +52,7 @@ const STORAGE_KEY_USER_EMAIL = 'lifely_user_email';
 const STORAGE_KEY_YEAR = 'lifely_year';
 
 export function useLifely() {
+  const isLlmConfigured = !!OPENAI_API_KEY || !!LLM_PROXY_URL;
   const [state, setState] = useState<LifelyState>({
     phase: 'idle',
     progress: 0,
@@ -65,7 +66,7 @@ export function useLifely() {
   /**
    * Start the OAuth + processing flow.
    */
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (options?: { enableAi?: boolean }) => {
     if (!GOOGLE_CLIENT_ID) {
       setState((s) => ({
         ...s,
@@ -76,6 +77,8 @@ export function useLifely() {
     }
 
     try {
+      const enableAi = options?.enableAi ?? true;
+
       // Phase 1: OAuth
       setState((s) => ({
         ...s,
@@ -163,7 +166,7 @@ export function useLifely() {
       sessionStorage.setItem(STORAGE_KEY_YEAR, String(TARGET_YEAR));
 
       const llmConfig =
-        OPENAI_API_KEY || LLM_PROXY_URL
+        enableAi && (OPENAI_API_KEY || LLM_PROXY_URL)
           ? {
               apiKey: OPENAI_API_KEY || null,
               proxyUrl: LLM_PROXY_URL || null,
@@ -238,5 +241,6 @@ export function useLifely() {
     connect,
     reset,
     isConfigured: !!GOOGLE_CLIENT_ID,
+    isLlmConfigured,
   };
 }
