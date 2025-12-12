@@ -9,7 +9,7 @@
 Phase 2 has been fully implemented with the following features:
 
 ### Location Enrichment
-- **LLM-based extraction** using GPT-5.1 Responses API
+- **LLM-based extraction** using GPT-5 Responses API (default model: `gpt-5.2-instant`)
 - Extracts: `venue_name`, `neighborhood`, `city`, `cuisine`
 - **Async parallel batching** with concurrency limits (2 concurrent)
 - **Retry logic** with exponential backoff for rate limits

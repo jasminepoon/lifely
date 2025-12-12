@@ -63,37 +63,53 @@ export const Narrative = forwardRef<HTMLDivElement, NarrativeProps>(({ narrative
 
   // Split into paragraphs for display
   const paragraphs = displayedText.split('\n\n').filter(Boolean);
+  const hasContent = paragraphs.length > 0;
 
   return (
     <section
       ref={ref}
-      className={cn("min-h-screen flex items-center justify-center px-4 py-16", className)}
+      className={cn("h-screen px-4 py-16", className)}
+      style={{
+        minWidth: '100vw',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        scrollSnapAlign: 'start',
+        flexShrink: 0,
+      }}
       aria-labelledby="narrative-heading"
     >
-      <div ref={containerRef} className="w-full max-w-lg">
+      <div ref={containerRef} style={{ width: '100%', maxWidth: '32rem' }}>
         {/* Header */}
         <div className="mb-8 reveal-up">
-          <h2 id="narrative-heading" className="text-2xl font-semibold text-text-primary mb-2">
+          <h2 id="narrative-heading" className="text-2xl font-semibold text-white mb-2">
             Your story
           </h2>
         </div>
 
         {/* Narrative */}
-        <div className="bg-bg-card border border-border-default rounded-xl p-6 reveal-up">
-          <div className="space-y-4">
-            {paragraphs.map((para, index) => (
-              <p
-                key={index}
-                className="text-[17px] text-text-secondary leading-relaxed"
-              >
-                "{para}
-                {index === paragraphs.length - 1 && !isTyping && '"'}
-                {index === paragraphs.length - 1 && isTyping && (
-                  <span className="animate-pulse">|</span>
-                )}
-              </p>
-            ))}
-          </div>
+        <div className="bg-gray-900 border border-white/10 rounded-xl p-6 reveal-up">
+          {hasContent ? (
+            <div className="space-y-4">
+              {paragraphs.map((para, index) => (
+                <p
+                  key={index}
+                  className="text-[17px] text-gray-400 leading-relaxed"
+                >
+                  "{para}
+                  {index === paragraphs.length - 1 && !isTyping && '"'}
+                  {index === paragraphs.length - 1 && isTyping && (
+                    <span className="animate-pulse">|</span>
+                  )}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[15px] text-gray-500">
+              Story not available yet. Please retry once AI enrichment completes.
+            </p>
+          )}
         </div>
       </div>
     </section>

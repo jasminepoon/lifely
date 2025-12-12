@@ -24,46 +24,68 @@ const CUISINE_EMOJIS: Record<string, string> = {
 };
 
 export const Places = forwardRef<HTMLDivElement, PlacesProps>(({ data, className }, ref) => {
-  if (data.neighborhoods.length === 0) return null;
-
+  const hasNeighborhoods = data.neighborhoods.length > 0;
   const maxNeighborhood = data.neighborhoods[0]?.[1] || 1;
 
   return (
     <section
       ref={ref}
-      className={cn("min-h-screen flex items-center justify-center px-4 py-16", className)}
+      className={cn("h-screen px-4 py-16", className)}
+      style={{
+        minWidth: '100vw',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        scrollSnapAlign: 'start',
+        flexShrink: 0,
+      }}
       aria-labelledby="places-heading"
     >
-      <div className="w-full max-w-lg">
+      <div style={{ width: '100%', maxWidth: '32rem' }}>
         {/* Header */}
         <div className="mb-8 reveal-up">
-          <h2 id="places-heading" className="text-2xl font-semibold text-text-primary mb-2">
+          <h2 id="places-heading" className="text-2xl font-semibold text-white mb-2">
             Your NYC footprint
           </h2>
-          <p className="text-[15px] text-text-secondary">
+          <p className="text-[15px] text-gray-400">
             Where you spent your year
           </p>
         </div>
 
         {/* Neighborhoods */}
-        <div className="bg-bg-card border border-border-default rounded-xl p-6 reveal-up">
-          <div className="space-y-3">
-            {data.neighborhoods.map(([hood, count], index) => (
-              <BarRow
-                key={hood}
-                label={hood}
-                value={count}
-                maxValue={maxNeighborhood}
-                delay={index * 50}
-              />
-            ))}
-          </div>
+        <div
+          className="reveal-up"
+          style={{
+            backgroundColor: '#111827',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '0.75rem',
+            padding: '1.5rem',
+          }}
+        >
+          {hasNeighborhoods ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {data.neighborhoods.map(([hood, count], index) => (
+                <BarRow
+                  key={hood}
+                  label={hood}
+                  value={count}
+                  maxValue={maxNeighborhood}
+                  delay={index * 50}
+                />
+              ))}
+            </div>
+          ) : (
+            <p className="text-[15px] text-gray-500">
+              Location summary unavailable. Rerun with AI enrichment enabled.
+            </p>
+          )}
 
           {/* Cuisines */}
           {data.cuisines.length > 0 && (
-            <div className="mt-6 pt-6 border-t border-border-default">
-              <p className="text-sm text-text-muted mb-3">Top cuisines</p>
-              <div className="flex flex-wrap gap-2">
+            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+              <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.75rem' }}>Top cuisines</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                 {data.cuisines.slice(0, 4).map(([cuisine, count], index) => {
                   const emoji = CUISINE_EMOJIS[cuisine.toLowerCase()] || CUISINE_EMOJIS.default;
                   return (

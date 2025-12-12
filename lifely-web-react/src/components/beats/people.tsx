@@ -10,36 +10,53 @@ interface PeopleProps {
 }
 
 export const People = forwardRef<HTMLDivElement, PeopleProps>(({ people, className }, ref) => {
-  if (people.length === 0) return null;
+  const hasPeople = people.length > 0;
 
   return (
     <section
       ref={ref}
-      className={cn("min-h-screen flex items-center justify-center px-4 py-16", className)}
+      className={cn("h-screen px-4 py-16", className)}
+      style={{
+        minWidth: '100vw',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        scrollSnapAlign: 'start',
+        flexShrink: 0,
+      }}
       aria-labelledby="people-heading"
     >
-      <div className="w-full max-w-lg">
+      <div style={{ width: '100%', maxWidth: '32rem' }}>
         {/* Header */}
         <div className="mb-8 reveal-up">
-          <h2 id="people-heading" className="text-2xl font-semibold text-text-primary mb-2">
+          <h2 id="people-heading" className="text-2xl font-semibold text-white mb-2">
             The ones who showed up
           </h2>
-          <p className="text-[15px] text-text-secondary">
+          <p className="text-[15px] text-gray-400">
             Your top friends with venues & neighborhoods
           </p>
         </div>
 
         {/* People cards */}
-        <div className="space-y-4">
-          {people.map((person, index) => (
-            <PersonCard
-              key={person.name}
-              person={person}
-              index={index}
-              delay={index * 80}
-            />
-          ))}
-        </div>
+        {hasPeople ? (
+          <div className="space-y-4">
+            {people.map((person, index) => (
+              <PersonCard
+                key={person.name}
+                person={person}
+                index={index}
+                delay={index * 80}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="bg-gray-900 border border-white/10 rounded-xl p-6 reveal-up">
+            <p className="text-[15px] text-gray-500">
+              No people data available for this year.
+            </p>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -47,43 +64,59 @@ export const People = forwardRef<HTMLDivElement, PeopleProps>(({ people, classNa
 
 People.displayName = 'People';
 
+const GRADIENT_STYLES = [
+  'linear-gradient(135deg, #00D4FF 0%, #00FF88 100%)',
+  'linear-gradient(135deg, #FF00FF 0%, #FF6B6B 100%)',
+  'linear-gradient(135deg, #00FF88 0%, #00D4FF 100%)',
+  'linear-gradient(135deg, #FF6B6B 0%, #FF00FF 100%)',
+  'linear-gradient(135deg, #00D4FF 0%, #FF00FF 100%)',
+];
+
 function PersonCard({ person, index, delay }: { person: Person; index: number; delay: number }) {
   const initial = person.name.charAt(0).toUpperCase();
-  const gradients = [
-    'from-accent-cyan to-accent-green',
-    'from-accent-magenta to-accent-warm',
-    'from-accent-green to-accent-cyan',
-    'from-accent-warm to-accent-magenta',
-    'from-accent-cyan to-accent-magenta',
-  ];
 
   return (
     <div
-      className="bg-bg-card border border-border-default rounded-xl p-4 hover:border-border-accent hover:shadow-glow transition-all duration-300 reveal-up"
-      style={{ animationDelay: `${delay}ms` }}
+      className="reveal-up"
+      style={{
+        backgroundColor: '#111827',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        borderRadius: '0.75rem',
+        padding: '1rem',
+        animationDelay: `${delay}ms`,
+      }}
     >
-      <div className="flex gap-4">
+      <div style={{ display: 'flex', gap: '1rem' }}>
         {/* Avatar */}
         <div
-          className={cn(
-            "flex-none w-13 h-13 rounded-xl flex items-center justify-center text-xl font-bold text-white bg-gradient-to-br",
-            gradients[index % gradients.length]
-          )}
+          style={{
+            flexShrink: 0,
+            width: '3.25rem',
+            height: '3.25rem',
+            borderRadius: '0.75rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.25rem',
+            fontWeight: 700,
+            color: 'white',
+            background: GRADIENT_STYLES[index % GRADIENT_STYLES.length],
+          }}
         >
           {initial}
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-w-0">
+        <div style={{ flex: 1, minWidth: 0 }}>
           {/* Name and meta */}
-          <p className="text-lg font-medium text-text-primary">{person.name}</p>
-          <p className="text-[15px] text-text-secondary">
+          <p style={{ fontSize: '1.125rem', fontWeight: 500, color: 'white' }}>{person.name}</p>
+          <p style={{ fontSize: '15px', color: '#9ca3af' }}>
             {person.count} moments · {Math.round(person.hours)} hours
           </p>
 
           {/* Venues */}
           {person.venues.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '0.5rem' }}>
               {person.venues.map((venue) => (
                 <Chip key={venue} variant="accent">{venue}</Chip>
               ))}
@@ -92,7 +125,7 @@ function PersonCard({ person, index, delay }: { person: Person; index: number; d
 
           {/* Neighborhoods */}
           {person.neighborhoods.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '0.375rem' }}>
               {person.neighborhoods.map((hood) => (
                 <Chip key={hood}>{hood}</Chip>
               ))}
@@ -102,7 +135,7 @@ function PersonCard({ person, index, delay }: { person: Person; index: number; d
           {/* Sparkbar */}
           <Sparkbar
             percentage={person.percentage}
-            className="mt-3"
+            style={{ marginTop: '0.75rem' }}
             delay={delay + 300}
           />
         </div>

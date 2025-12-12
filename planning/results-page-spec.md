@@ -23,9 +23,11 @@ Every beat is designed for **screenshots**. Self-contained, readable at phone re
 
 | Device | Interaction |
 |--------|-------------|
-| Desktop | Scroll to advance between beats |
-| Mobile | Scroll or swipe |
-| Both | Progress dots at top show current beat |
+| Desktop | Horizontal scroll to advance between beats |
+| Mobile | Horizontal swipe |
+| Both | Progress dots at top show current beat (updates via scroll position) |
+
+> **Implementation Note**: Uses CSS `scroll-snap-type: x mandatory` with `scroll-snap-align: start` on each beat. Each beat is `min-width: 100vw`.
 
 ### Beat Sequence
 
@@ -42,10 +44,12 @@ Beat 7: Experiments      → "Ideas for next year"
 ### Progress Indicator
 
 - 7 dots, 8px diameter, 8px gap
-- Inactive: `--border-default` (10% white)
-- Active: `--accent-cyan` with `--glow-cyan`
+- Inactive: `rgba(255, 255, 255, 0.2)`, scale 0.75
+- Active: `#22D3EE` (cyan-400), scale 1.0
 - Fixed at top of viewport, 16px from top
-- Updates as user scrolls (Intersection Observer)
+- Updates via scroll event listener (`scrollLeft / containerWidth`)
+
+> **Implementation Note**: Edge case handling ensures last beat fills all dots when `scrollLeft >= maxScroll - 10`.
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -329,7 +333,7 @@ interface RitualsData {
 - **Positive framing** — "showed up for yourself" not "self-care sessions"
 - **Max 5 activities** — more feels like a to-do list
 - **Venue is optional** — only show if consistent (same place every time)
-- **Empty state**: If no self-care detected, skip this beat entirely
+- **Empty state**: If no activity data is available, render a fallback card (don’t drop beats or change dot count)
 
 ---
 
@@ -659,8 +663,8 @@ interface LifelyResults {
 ### No People Data
 
 If `topPeople` is empty (all events are solo):
-- Skip Beat 2 entirely
-- Adjust progress dots to 6
+- Render Beat 2 with a short fallback message
+- Keep progress dots stable (still 7 beats)
 
 ### No Location Data
 
@@ -672,13 +676,13 @@ If `neighborhoods` is empty:
 ### No Rituals
 
 If `rituals` is empty:
-- Skip Beat 4 entirely
-- Adjust progress dots to 6
+- Render Beat 4 with a short fallback message
+- Keep progress dots stable (still 7 beats)
 
 ### Fallback Narrative
 
 If LLM fails to generate narrative:
-- Show stats-based fallback: "In 2025, you had {X} events across {Y} places..."
+- Show a stats-based fallback using Beat 1 data (no AI required)
 
 ---
 

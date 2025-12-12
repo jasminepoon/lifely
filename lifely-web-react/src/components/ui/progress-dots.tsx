@@ -1,28 +1,34 @@
-import { cn } from '@/lib/utils'
-
 interface ProgressDotsProps {
   total?: number
   active?: number
-  className?: string
 }
 
-export function ProgressDots({ total = 5, active = 0, className }: ProgressDotsProps) {
+export function ProgressDots({ total = 7, active = 0 }: ProgressDotsProps) {
   return (
     <div
-      className={cn("flex items-center gap-2", className)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem',
+      }}
       aria-hidden="true"
     >
-      {Array.from({ length: total }, (_, i) => (
-        <span
-          key={i}
-          className={cn(
-            "size-2 rounded-full transition-all duration-300",
-            i < active
-              ? "bg-accent-cyan scale-100"
-              : "bg-text-muted/40 scale-75"
-          )}
-        />
-      ))}
+      {Array.from({ length: total }, (_, i) => {
+        const isActive = i < active
+        return (
+          <span
+            key={i}
+            style={{
+              width: '0.5rem',
+              height: '0.5rem',
+              borderRadius: '9999px',
+              backgroundColor: isActive ? '#22D3EE' : 'rgba(255, 255, 255, 0.2)',
+              transform: isActive ? 'scale(1)' : 'scale(0.75)',
+              transition: 'all 0.3s ease',
+            }}
+          />
+        )
+      })}
     </div>
   )
 }

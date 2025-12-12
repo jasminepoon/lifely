@@ -108,6 +108,7 @@ lifely/
 ├── lifely-web-react/  # React frontend (active development)
 ├── spikes/            # UI prototypes (standalone HTML)
 ├── lifely-web/        # Vanilla JS version (archived)
+├── workers/           # Cloudflare Workers (LLM proxy)
 ├── src/lifely/        # Python CLI tool
 └── ui_screenshots/    # Reference designs (gitignored)
 ```
@@ -124,9 +125,8 @@ uv run lifely --enrich --top 5
 ### Run the React App
 ```bash
 cd lifely-web-react
-npm run dev   # http://localhost:5173
+npm run dev   # http://localhost:5173 (or next available)
 ```
 
-### Preview Landing States
-- URL: `?state=processing`, `?state=declined`, etc.
-- Keyboard: Press `1`-`7` to switch states
+### Dev Shortcuts
+- Press `r` to toggle between landing/results (dev only)

@@ -2,8 +2,8 @@
 
 > System design for Google Calendar 2025 Wrapped
 >
-> **Last Updated**: 2025-12-10
-> **Status**: Phase 1 ✅ Complete | Phase 2 ✅ Complete | Phase 3-4 Planned
+> **Last Updated**: 2025-12-12
+> **Status**: Phase 1-3 ✅ Complete | Phase 4 🚧 In Progress (React UI wired, needs validation)
 
 ---
 
@@ -26,6 +26,12 @@
 ```
 
 ---
+
+## Operational Constraints
+
+- **OpenAI rate limits**: current GPT-5 family limits are ~3 RPM, so the pipeline must pack work into fewer, larger requests.
+- **LLM key safety**: production must route LLM calls via a proxy (Cloudflare Worker) so keys are never shipped to the browser.
+- **Current React defaults**: `gpt-5.2-instant` as primary model with fallbacks; location/classification are cached client-side to make reruns cheap.
 
 ## High-Level Architecture
 
@@ -77,7 +83,7 @@
                                  ┌─────────────────┐
                                  │     OpenAI      │
                                  │  ┌───────────┐  │
-                                 │  │  GPT-5.1  │  │
+                                 │  │gpt-5.2-ins│  │
                                  │  │ Responses │  │
                                  │  │    API    │  │
                                  │  └───────────┘  │
@@ -162,7 +168,7 @@
 | `suggest_merges()` | Link inferred names to email friends | `list[MergeSuggestion]` |
 | `apply_enrichments_to_friend_stats()` | Add location data to friend events | `list[FriendStats]` (enriched) |
 
-> **Note**: GPT-5.1 handles most enrichment; Places API is used opportunistically for Google Maps links when `GOOGLE_MAPS_API_KEY` is set.
+> **Note**: GPT-5.2-instant (default) handles most enrichment; Places API is used opportunistically for Google Maps links when `GOOGLE_MAPS_API_KEY` is set.
 
 ---
 
@@ -301,7 +307,7 @@
 ├─────────────────┬───────────────────┬───────────────────────────────────────┤
 │ Service         │ Purpose           │ Auth                                  │
 ├─────────────────┼───────────────────┼───────────────────────────────────────┤
-│ GPT-5.1         │ All enrichment:   │ API Key (OPENAI_API_KEY)              │
+│ GPT-5.2-instant │ All enrichment:   │ API Key (OPENAI_API_KEY)              │
 │ Responses API   │ • Location extract│ ~$0.05 per run                        │
 │                 │ • SOCIAL → names  │ Async batched: 50 events/request      │
 │                 │ • ACTIVITY → type │ 2 concurrent batches max              │
@@ -332,7 +338,7 @@ Phase 1 (Core):
 └── rich                      # CLI formatting
 
 Phase 2 (Enrichment):
-└── openai                    # GPT-5.1 API client (async support)
+└── openai                    # GPT-5 API client (async support)
 ```
 
 ---
@@ -369,7 +375,7 @@ lifely/
 │   ├── cli.py                  # CLI entrypoint & display
 │   │
 │   │  # ══════ PHASE 2 ✅ ══════
-│   └── llm_enrich.py           # GPT-5.1 enrichment (async batching)
+│   └── llm_enrich.py           # GPT-5 enrichment (async batching)
 │
 ├── tests/                      # Test files
 ├── pyproject.toml              # Project config
@@ -456,7 +462,7 @@ STEP 5a: LOCATION ENRICHMENT (Async Parallel)
 │                                                                          │
 │  ┌──────────────┐    Processing:                                         │
 │  │   OpenAI     │    • Async parallel batches (2 concurrent)             │
-│  │   GPT-5.1    │    • 50 events per batch                               │
+│  │GPT-5.2-instant│    • 50 events per batch                               │
 │  │   Responses  │    • Retry with exponential backoff (5s, 10s, 20s...)  │
 │  │   API        │    • Deduplication by location string                  │
 │  │              │                                                        │
@@ -472,7 +478,7 @@ STEP 5b: SOLO EVENT CLASSIFICATION (Async Parallel)
 │                                                                          │
 │  ┌──────────────┐    Classification:                                     │
 │  │   OpenAI     │    • SOCIAL → extract names ["Masha", "John"]          │
-│  │   GPT-5.1    │    • ACTIVITY → category, activity_type, venue         │
+│  │GPT-5.2-instant│    • ACTIVITY → category, activity_type, venue         │
 │  │   Responses  │    • OTHER → skip                                      │
 │  │   API        │                                                        │
 │  │              │    Venue extraction from summary:                      │
@@ -618,26 +624,24 @@ STEP 6: OUTPUT
 │                           PHASE ROADMAP                                      │
 └─────────────────────────────────────────────────────────────────────────────┘
 
- PHASE 1 ✅                PHASE 2 ✅               PHASE 3                PHASE 4
- Calendar Pipeline         LLM Enrichment           Full Stats + Prompt    Visual UI
- ══════════════════        ══════════════           ═══════════════════    ═════════
+ PHASE 1 ✅                PHASE 2 ✅               PHASE 3 ✅             PHASE 4 🚧
+ Calendar Pipeline         LLM Enrichment           Full Stats + LLM       Visual UI (React)
+ ══════════════════        ══════════════           ═══════════════════    ═════════════════
 
  ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐    ┌─────────────────┐
- │ • OAuth auth    │      │ • Location LLM  │      │ • Context tags  │    │ • HTML/CSS      │
- │ • Fetch events  │      │ • Solo classify │      │ • Streaks calc  │    │ • Flighty-style │
- │ • Normalize     │ ───▶ │ • Infer friends │ ───▶ │ • LLM narrative │───▶│ • Charts/maps   │
- │ • Email friends │      │ • Activity stats│      │ • Hour buckets  │    │ • Shareable     │
- │ • Time stats    │      │ • Async batching│      │                 │    │                 │
- │ • JSON output   │      │ • Rate limiting │      │                 │    │                 │
- │ • CLI display   │      │ • Merge suggest │      │                 │    │                 │
- │                 │      │ • Neighborhoods │      │                 │    │                 │
+ │ • OAuth auth    │      │ • Location LLM  │      │ • Narrative gen │    │ • React 19 + TS │
+ │ • Fetch events  │      │ • Solo classify │      │ • Patterns LLM  │    │ • Vite 7        │
+ │ • Normalize     │ ───▶ │ • Infer friends │ ───▶ │ • Experiments   │───▶│ • 7 beat pages  │
+ │ • Email friends │      │ • Activity stats│      │ • Dynamic cats  │    │ • OAuth flow    │
+ │ • Time stats    │      │ • Async batching│      │ • Coverage stats│    │ • Horizontal    │
+ │ • JSON output   │      │ • Rate limiting │      │                 │    │   scroll + snap │
+ │ • CLI display   │      │ • Neighborhoods │      │                 │    │ • Glassmorphism │
  └─────────────────┘      └─────────────────┘      └─────────────────┘    └─────────────────┘
 
  Dependencies:             Dependencies:            Dependencies:          Dependencies:
  • Calendar API           • Phase 1 complete       • Phase 2 complete     • Phase 3 complete
- • OAuth credentials      • OpenAI API key         • All stats computed   • Static HTML gen
-                                                                          • Tailwind CSS
-                                                                          • Chart.js
+ • OAuth credentials      • OpenAI API key         • GPT-5 Responses API  • Tailwind CSS v4
+                                                                          • Google Identity
 ```
 
 ---

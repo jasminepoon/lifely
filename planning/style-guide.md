@@ -6,7 +6,7 @@
 
 ## Design Direction: Storyboard
 
-**We chose the Storyboard approach**: vertical scroll, progressive reveal, card-based beats. This matches the "Wrapped" mental model users expect while allowing our calendar data to shine.
+**We chose the Storyboard approach**: linear, scroll-snap beats (horizontal for v1), progressive reveal, card-based frames. This matches the "Wrapped" mental model users expect while allowing our calendar data to shine.
 
 **Borrowed from Flight Deck**: glass cards, sparkbars, premium density, the "boarding pass" hero aesthetic.
 
@@ -21,7 +21,7 @@
 **Beat flow (v1)**  
 1) Hero/Year + quick stats (auto count-up)  
 2) People card(s) with sparkbars + venues/hood chips  
-3) Places card with map heat (or stacked bars) + cuisine chips  
+3) Places card with stacked bars + cuisine chips  
 4) Rituals/Activities bar card  
 5) Patterns/streaks insight list  
 6) Narrative card (LLM story)  
@@ -40,7 +40,7 @@ Exploration notes — only Storyboard is locked for v1.
 ### Prototype Checklist (spin up locally)
 - Hero: year + 3 stats with count-up, boarding-pass framing
 - People: avatar cards with sparkbars and venue/hood chips
-- Places: stacked bars vs map heat (requires lat/lng; today we have names/neighborhoods only)
+- Places: stacked bars + cuisine chips (heatmap deferred for v1)
 - Rituals: horizontal bars for activities
 - Patterns: insight list with icons, sticky quick-stats on mobile
 - Narrative: prose card with gentle typewriter effect; respects reduced motion
@@ -50,7 +50,7 @@ Exploration notes — only Storyboard is locked for v1.
 - **Progress indicator**: Ticker (Flighty) vs dots (Wrapped). Default: dots; keep ticker as alt.
 - **Hero frame**: Boarding-pass slab with mono labels vs minimalist center stack. Default: boarding-pass slab with gradient glow.
 - **People**: Vertical stack with sparkbars + venue/hood chips vs horizontal carousel. Default: vertical stack; carousel only if space-constrained.
-- **Places**: Stacked bars (default) vs map heat (needs coords). Prototype both; ship bars unless lat/lng density is good.
+- **Places**: Stacked bars + cuisine chips (default). Heatmap deferred until full lat/lng coverage is worth the cost/complexity.
 - **Rituals**: Horizontal bars with venue labels vs tile cards. Default: bars with subtle category badges.
 - **Patterns**: Iconed list vs two-column grid. Default: list for readability/screenshot.
 - **Narrative**: Glass card with typewriter pace vs static text. Default: gentle typewriter with reduced-motion fallback.

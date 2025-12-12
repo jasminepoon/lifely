@@ -2,6 +2,10 @@
 
 > **URL**: `https://lifely.thirdplane.io?token=abc123`
 > **Goal**: Get friends to connect their Google Calendar with minimal friction and maximum trust.
+>
+> **Implementation Note (2025-12-12)**: Progress dots were removed from landing page states to reserve them for Results page navigation only. The loading/processing state now uses a dedicated `ProcessingView` component with a 3-step timeline and glassmorphism card.
+>
+> **Implementation Status**: The current React app implements the OAuth + processing states, but does not yet enforce token-gated access (`?token=`). Token validation is part of Phase 5 hosting work.
 
 ---
 

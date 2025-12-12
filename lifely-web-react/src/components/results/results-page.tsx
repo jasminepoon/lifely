@@ -10,12 +10,37 @@ import { Rituals } from '@/components/beats/rituals';
 import { Patterns } from '@/components/beats/patterns';
 import { Narrative } from '@/components/beats/narrative';
 import { Experiments } from '@/components/beats/experiments';
+import { Button } from '@/components/ui/button';
 
 const BEAT_COUNT = 7;
 
+function buildFallbackNarrative(stats: {
+  year: number;
+  totalEvents: number;
+  totalHours: number;
+  busiestMonth: string;
+  busiestDay: string;
+}) {
+  const hours = Math.round(stats.totalHours);
+  return `In ${stats.year}, you logged ${stats.totalEvents} events across ${hours.toLocaleString()} hours. ${stats.busiestMonth} was your busiest month, and ${stats.busiestDay} was your busiest day of the week.`;
+}
+
 export function ResultsPage() {
-  const { results, loading, error, clearResults } = useResults();
-  const [currentBeat, beatRefs] = useScrollProgress(BEAT_COUNT);
+  const {
+    results,
+    loading,
+    error,
+    clearResults,
+    llmEnabled,
+    llmFailed,
+    llmWarning,
+    retryAiEnrichment,
+    retrying,
+    retryProgress,
+    retryMessage,
+    retryError,
+  } = useResults();
+  const [currentBeat, containerRef] = useScrollProgress(BEAT_COUNT);
 
   // Redirect to landing if no results
   useEffect(() => {
@@ -29,7 +54,7 @@ export function ResultsPage() {
       <div className="min-h-screen bg-animated-gradient flex items-center justify-center">
         <ParticlesBackground />
         <div className="relative z-10">
-          <div className="size-8 rounded-full border-2 border-accent-cyan border-t-transparent animate-spin" />
+          <div className="size-8 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
         </div>
       </div>
     );
@@ -40,59 +65,92 @@ export function ResultsPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-animated-gradient">
+    <div className="relative h-screen overflow-hidden bg-animated-gradient">
       {/* Particle background */}
       <ParticlesBackground />
 
+      {/* LLM warning banner */}
+      {llmEnabled && (llmFailed || !!retryError) && (
+        <div
+          className="fixed top-2 left-1/2 z-50 px-3 py-2 rounded-lg border border-yellow-400/50 bg-black/60 text-sm text-yellow-100"
+          style={{ transform: 'translateX(-50%)' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ lineHeight: 1.2 }}>
+              {retrying ? (
+                <span>
+                  {retryMessage} {retryProgress ? `(${retryProgress}%)` : ''}
+                </span>
+              ) : retryError ? (
+                <span>{retryError}</span>
+              ) : (
+                <span>
+                  {llmWarning ||
+                    'AI enrichment is incomplete. Some sections may be missing.'}
+                </span>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={retryAiEnrichment}
+              disabled={retrying}
+              className="h-7 px-3"
+            >
+              {retrying ? 'Retrying…' : 'Retry AI'}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Progress dots - fixed at top */}
       <nav
-        className="fixed top-4 left-1/2 -translate-x-1/2 z-50"
+        className="fixed top-4 left-1/2 z-50"
+        style={{ transform: 'translateX(-50%)' }}
         aria-label="Progress"
       >
         <ProgressDots total={BEAT_COUNT} active={currentBeat + 1} />
       </nav>
 
-      {/* Main content */}
-      <main className="relative z-10">
+      {/* Main content - horizontal scroll with snap */}
+      <main
+        ref={containerRef}
+        className="relative z-10 h-full"
+        style={{
+          display: 'flex',
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          scrollSnapType: 'x mandatory',
+          scrollBehavior: 'smooth',
+          WebkitOverflowScrolling: 'touch',
+        }}
+      >
         {/* Beat 1: Hero */}
-        <Hero
-          ref={beatRefs[0]}
-          data={results.stats}
-        />
+        <Hero data={results.stats} />
 
         {/* Beat 2: People */}
-        <People
-          ref={beatRefs[1]}
-          people={results.topPeople}
-        />
+        <People people={results.topPeople} />
 
         {/* Beat 3: Places */}
-        <Places
-          ref={beatRefs[2]}
-          data={results.places}
-        />
+        <Places data={results.places} />
 
         {/* Beat 4: Rituals */}
-        <Rituals
-          ref={beatRefs[3]}
-          data={results.rituals}
-        />
+        <Rituals data={results.rituals} />
 
         {/* Beat 5: Patterns */}
-        <Patterns
-          ref={beatRefs[4]}
-          patterns={results.patterns}
-        />
+        <Patterns patterns={results.patterns} />
 
         {/* Beat 6: Narrative */}
         <Narrative
-          ref={beatRefs[5]}
-          narrative={results.narrative}
+          narrative={
+            results.narrative && results.narrative.trim()
+              ? results.narrative
+              : buildFallbackNarrative(results.stats)
+          }
         />
 
         {/* Beat 7: Experiments */}
         <Experiments
-          ref={beatRefs[6]}
           experiments={results.experiments}
           onStartOver={clearResults}
         />

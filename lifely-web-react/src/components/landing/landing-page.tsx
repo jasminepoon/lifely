@@ -1,113 +1,35 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ProgressDots } from '@/components/ui/progress-dots'
 import { ParticlesBackground } from '@/hooks/use-particles'
+import { useLifely } from '@/hooks/use-lifely'
 import { HeroText } from './hero-text'
 import { MessageBox } from './message-box'
-import { ProgressBar } from './progress-bar'
+import { ProcessingView } from './processing-view'
 import { HowItWorksModal, PermissionsModal } from './modals'
-
-// ═══════════════════════════════════════════════════════════
-// STATE MACHINE
-// ═══════════════════════════════════════════════════════════
-
-type State = 'loading' | 'valid' | 'invalid' | 'oauth' | 'declined' | 'processing' | 'error'
-
-interface ProcessingPhase {
-  message: string
-  dots: number
-  progress: number
-}
-
-const PROCESSING_PHASES: ProcessingPhase[] = [
-  { message: 'Fetching your calendar...', dots: 1, progress: 10 },
-  { message: 'Crunching numbers...', dots: 2, progress: 30 },
-  { message: 'Finding your people...', dots: 3, progress: 50 },
-  { message: 'Mapping your city...', dots: 4, progress: 70 },
-  { message: 'Writing your story...', dots: 5, progress: 90 },
-]
-
-const STATE_KEYS: State[] = ['loading', 'valid', 'invalid', 'oauth', 'declined', 'processing', 'error']
 
 // ═══════════════════════════════════════════════════════════
 // COMPONENT
 // ═══════════════════════════════════════════════════════════
 
 export function LandingPage() {
-  const [state, setState] = useState<State>('loading')
-  const [processingPhase, setProcessingPhase] = useState(0)
+  const lifely = useLifely()
   const [showHowModal, setShowHowModal] = useState(false)
   const [showPermissionsModal, setShowPermissionsModal] = useState(false)
-  const [errorMessage] = useState<string | null>(null)
 
-  // Check for URL param override (for sharing previews)
+  // Navigate to results when processing completes
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const stateParam = params.get('state') as State | null
-
-    if (stateParam && STATE_KEYS.includes(stateParam)) {
-      setState(stateParam)
-      return
+    if (lifely.phase === 'complete') {
+      // Short delay to show "Your year is ready!" message
+      const timer = setTimeout(() => {
+        window.location.href = '/results'
+      }, 1000)
+      return () => clearTimeout(timer)
     }
+  }, [lifely.phase])
 
-    // Default: show valid state after short delay
-    const timer = setTimeout(() => {
-      setState('valid')
-    }, 1000)
-
-    return () => clearTimeout(timer)
-  }, [])
-
-  // Keyboard shortcuts for dev mode (1-7 to switch states)
-  useEffect(() => {
-    if (import.meta.env.PROD) return
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing in an input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-
-      const num = parseInt(e.key)
-      if (num >= 1 && num <= 7) {
-        setState(STATE_KEYS[num - 1])
-        setProcessingPhase(0)
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
-
-  // Handle connect click
-  const handleConnect = useCallback(() => {
-    setState('oauth')
-
-    // Simulate OAuth flow for demo
-    setTimeout(() => {
-      // Randomly succeed or decline for demo purposes
-      const success = Math.random() > 0.3
-      if (success) {
-        setState('processing')
-        setProcessingPhase(0)
-        // Simulate processing phases
-        let phase = 0
-        const interval = setInterval(() => {
-          phase++
-          if (phase < PROCESSING_PHASES.length) {
-            setProcessingPhase(phase)
-          } else {
-            clearInterval(interval)
-            // Would redirect to results here
-            console.log('Processing complete!')
-          }
-        }, 1500)
-      } else {
-        setState('declined')
-      }
-    }, 2000)
-  }, [])
-
-  const currentPhase = PROCESSING_PHASES[processingPhase]
+  // Determine if we're in a processing state (fetching or processing)
+  const isProcessing = lifely.phase === 'fetching_calendar' || lifely.phase === 'processing'
 
   return (
     <div className="relative min-h-screen bg-animated-gradient">
@@ -115,77 +37,109 @@ export function LandingPage() {
       <ParticlesBackground />
 
       {/* Main content */}
-      <main className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4">
-        {/* Loading state */}
-        {state === 'loading' && (
-          <section aria-label="Loading">
-            <div className="size-8 rounded-full border-2 border-accent-cyan border-t-transparent animate-spin" />
-          </section>
-        )}
-
-        {/* Valid token state (main landing) */}
-        {state === 'valid' && (
-          <section className="flex flex-col items-center gap-8 page-enter" aria-label="Connect your calendar">
-            <ProgressDots total={5} active={0} />
-
+      <main
+        className="relative z-10 min-h-screen px-4"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {/* Idle state (ready to connect) */}
+        {lifely.phase === 'idle' && (
+          <section
+            className="page-enter"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '2rem',
+            }}
+            aria-label="Connect your calendar"
+          >
             <HeroText tagline="Your year in moments." />
 
-            <Button
-              size="xl"
-              variant="glow"
-              onClick={handleConnect}
-              className="mt-4"
-            >
-              Connect Calendar
-            </Button>
+            {!lifely.isConfigured ? (
+              <>
+                <MessageBox title="Setup Required">
+                  <p>
+                    Google OAuth is not configured.<br />
+                    Add VITE_GOOGLE_CLIENT_ID to your .env file.
+                  </p>
+                </MessageBox>
+              </>
+            ) : (
+              <>
+                <Button
+                  size="xl"
+                  variant="glow"
+                  onClick={lifely.connect}
+                  style={{ marginTop: '1rem' }}
+                >
+                  Connect Calendar
+                </Button>
 
-            <p className="text-sm text-text-muted">
-              Read-only · Stays in your browser
-            </p>
+                <p className="text-sm text-gray-500">
+                  Read-only · Stays in your browser
+                </p>
 
-            <button
-              onClick={() => setShowHowModal(true)}
-              className="flex items-center gap-1 text-sm text-text-secondary hover:text-accent-cyan transition-colors"
-            >
-              How this works <ChevronDown className="size-4" />
-            </button>
-          </section>
-        )}
-
-        {/* Invalid/expired token */}
-        {state === 'invalid' && (
-          <section className="flex flex-col items-center gap-8 page-enter" aria-label="Link expired">
-            <HeroText />
-
-            <MessageBox title="This link has expired.">
-              <p>
-                Each link works up to 3 times.<br />
-                Ask for a new one to continue.
-              </p>
-            </MessageBox>
+                <button
+                  onClick={() => setShowHowModal(true)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                    fontSize: '0.875rem',
+                    color: '#9ca3af',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  How this works <ChevronDown style={{ width: '1rem', height: '1rem' }} />
+                </button>
+              </>
+            )}
           </section>
         )}
 
         {/* OAuth pending */}
-        {state === 'oauth' && (
-          <section className="flex flex-col items-center gap-8 page-enter" aria-label="Signing in">
-            <ProgressDots total={5} active={0} />
-
-            <HeroText tagline="Waiting for Google sign-in..." />
+        {lifely.phase === 'oauth_pending' && (
+          <section
+            className="page-enter"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '2rem',
+            }}
+            aria-label="Signing in"
+          >
+            <HeroText tagline="Waiting for Google sign-in" />
 
             <Button size="xl" variant="secondary" disabled>
               Waiting...
             </Button>
 
-            <p className="text-sm text-text-muted">
+            <p className="text-sm text-gray-500">
               Complete sign-in in the popup.
             </p>
           </section>
         )}
 
         {/* OAuth declined */}
-        {state === 'declined' && (
-          <section className="flex flex-col items-center gap-8 page-enter" aria-label="Access declined">
+        {lifely.phase === 'oauth_declined' && (
+          <section
+            className="page-enter"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '2rem',
+            }}
+            aria-label="Access declined"
+          >
             <HeroText />
 
             <MessageBox title="No worries.">
@@ -195,54 +149,114 @@ export function LandingPage() {
               </p>
             </MessageBox>
 
-            <Button size="xl" variant="glow" onClick={handleConnect}>
+            <Button size="xl" variant="glow" onClick={lifely.connect}>
               Try Again
             </Button>
 
             <button
               onClick={() => setShowPermissionsModal(true)}
-              className="text-sm text-text-secondary hover:text-accent-cyan transition-colors"
+              style={{
+                fontSize: '0.875rem',
+                color: '#9ca3af',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+              }}
             >
               What permissions exactly?
             </button>
           </section>
         )}
 
-        {/* Processing */}
-        {state === 'processing' && (
-          <section className="flex flex-col items-center gap-8 page-enter" aria-label="Processing your calendar">
-            <ProgressDots total={5} active={currentPhase.dots} />
+        {/* Processing (fetching calendar + processing) */}
+        {isProcessing && (
+          <ProcessingView
+            progress={lifely.progress}
+            message={lifely.message}
+            eventCount={lifely.eventCount}
+          />
+        )}
 
-            <p className="text-xl text-text-primary font-medium">
-              {currentPhase.message}
-            </p>
+        {/* Complete */}
+        {lifely.phase === 'complete' && (
+          <section
+            className="page-enter"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '1.5rem',
+            }}
+            aria-label="Processing complete"
+          >
+            {/* Success checkmark with glow */}
+            <div
+              style={{
+                width: '4rem',
+                height: '4rem',
+                borderRadius: '9999px',
+                background: 'linear-gradient(135deg, rgba(0, 212, 255, 0.3) 0%, rgba(0, 255, 136, 0.3) 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 0 30px rgba(0, 212, 255, 0.4)',
+              }}
+            >
+              <span style={{ fontSize: '2rem', color: 'white' }}>✓</span>
+            </div>
 
-            <ProgressBar progress={currentPhase.progress} />
+            <h2
+              style={{
+                fontSize: '1.5rem',
+                fontWeight: 500,
+                color: 'white',
+              }}
+            >
+              Your year is ready
+            </h2>
 
-            <p className="text-sm text-text-muted">
-              This takes about 30 seconds.
+            <p
+              style={{
+                fontSize: '0.875rem',
+                color: 'rgba(255, 255, 255, 0.5)',
+              }}
+            >
+              Redirecting...
             </p>
           </section>
         )}
 
         {/* Error */}
-        {state === 'error' && (
-          <section className="flex flex-col items-center gap-8 page-enter" aria-label="Error">
+        {lifely.phase === 'error' && (
+          <section
+            className="page-enter"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '2rem',
+            }}
+            aria-label="Error"
+          >
             <HeroText />
 
             <MessageBox title="Something went wrong.">
               <p>
-                {errorMessage || "We couldn't load your calendar data. This might be a temporary issue."}
+                {lifely.error || "We couldn't load your calendar data. This might be a temporary issue."}
               </p>
             </MessageBox>
 
-            <Button size="xl" variant="glow" onClick={handleConnect}>
+            <Button size="xl" variant="glow" onClick={lifely.connect}>
               Try Again
             </Button>
 
             <a
               href="mailto:hello@thirdplane.io"
-              className="text-sm text-text-secondary hover:text-accent-cyan transition-colors"
+              style={{
+                fontSize: '0.875rem',
+                color: '#9ca3af',
+                textDecoration: 'none',
+              }}
             >
               Still not working? Let us know.
             </a>
@@ -259,7 +273,6 @@ export function LandingPage() {
         isOpen={showPermissionsModal}
         onClose={() => setShowPermissionsModal(false)}
       />
-
     </div>
   )
 }

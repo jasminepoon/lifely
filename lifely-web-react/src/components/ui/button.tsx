@@ -5,24 +5,24 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-bg-base",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900",
   {
     variants: {
       variant: {
         default:
-          "bg-accent-cyan text-bg-base shadow-sm hover:bg-accent-cyan/90 active:scale-[0.98]",
+          "bg-cyan-400 text-slate-900 shadow-sm hover:bg-cyan-400/90 active:scale-[0.98]",
         destructive:
-          "bg-accent-warm text-text-primary shadow-sm hover:bg-accent-warm/90",
+          "bg-red-400 text-white shadow-sm hover:bg-red-400/90",
         outline:
-          "border border-border-default bg-transparent shadow-sm hover:bg-bg-elevated hover:border-border-active",
+          "border border-white/10 bg-transparent shadow-sm hover:bg-gray-800 hover:border-cyan-400/40",
         secondary:
-          "bg-bg-elevated text-text-primary shadow-sm hover:bg-bg-elevated/80",
+          "bg-gray-800 text-white shadow-sm hover:bg-gray-800/80",
         ghost:
-          "hover:bg-bg-elevated hover:text-text-primary",
+          "hover:bg-gray-800 hover:text-white",
         link:
-          "text-accent-cyan underline-offset-4 hover:underline",
+          "text-cyan-400 underline-offset-4 hover:underline",
         glow:
-          "bg-accent-cyan text-bg-base shadow-sm hover:bg-accent-cyan/90 active:scale-[0.98] glow-cyan pulse-glow",
+          "bg-cyan-400 text-slate-900 shadow-sm hover:bg-cyan-400/90 active:scale-[0.98] shadow-[0_0_20px_rgba(0,212,255,0.4)]",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
@@ -60,4 +60,4 @@ function Button({
   )
 }
 
-export { Button, buttonVariants }
+export { Button }

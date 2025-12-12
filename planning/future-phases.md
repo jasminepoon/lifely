@@ -1,6 +1,8 @@
 # Future Phases: Location, Stats, and UI
 
 > This document outlines Phase 2+ after the core calendar pipeline is working.
+>
+> **Note (2025-12-12)**: `planning/status.md` is the source of truth. This doc is kept as a roadmap, but statuses below reflect the current codebase.
 
 ---
 
@@ -18,7 +20,7 @@ Enrich events with place data from Google Maps/Places API to answer:
 
 ### Implementation Summary
 
-**Approach Changed**: Instead of Google Places API, we use **GPT-5.1 LLM** for location extraction. This is simpler, cheaper, and handles most cases well.
+**Approach Changed**: Instead of relying entirely on Google Places, we use **GPT-5 (Responses API)** for most location extraction (default model: `gpt-5.2-instant`). Places API is used opportunistically for Google Maps links when a key is present.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
@@ -40,15 +42,15 @@ Enrich events with place data from Google Maps/Places API to answer:
 - [x] **Create API Key** (API Keys → Create new secret key)
 - [x] **Configure Environment Variable**: `export OPENAI_API_KEY="sk-..."`
 
-#### Google Places API Setup (Optional - NOT USED)
+#### Google Places API Setup (Optional - PARTIAL)
 
-> We opted to skip Places API. LLM extraction handles ~95% of cases.
+> We don’t call Places for every location string. It’s used mainly to resolve opaque Google Maps links; the LLM covers most free-text locations.
 
 ### Modules Implemented
 
 ```
 src/lifely/
-├── llm_enrich.py         # ✅ LLM enrichment (GPT-5.1 Responses API)
+├── llm_enrich.py         # ✅ LLM enrichment (GPT-5 Responses API)
 │   ├── enrich_all_events()           # Location extraction
 │   ├── classify_solo_events()        # SOCIAL/ACTIVITY/OTHER
 │   ├── suggest_merges()              # Link inferred to email friends
@@ -71,7 +73,7 @@ STEP 5a: LOCATION ENRICHMENT
 ┌─────────────────────────────────────────────────────────────┐
 │  Input: All events with location_raw                        │
 │                                                             │
-│  OpenAI GPT-5.1 (Responses API)                             │
+│  OpenAI GPT-5 (Responses API)                               │
 │  ├── Async parallel batches (2 concurrent, 50/batch)        │
 │  ├── Retry with exponential backoff (5s, 10s, 20s...)       │
 │  └── Deduplication by location string                       │
@@ -119,7 +121,7 @@ stats_2025.json with:
 
 ## Phase 3: Full Stats & LLM Prompt
 
-> **Status**: ❌ **NOT STARTED**
+> **Status**: ✅ **CORE COMPLETE** (narrative/patterns/experiments shipped; optional stats still open)
 
 ### Goal
 
@@ -225,7 +227,7 @@ def build_wrapped_prompt(summary: dict) -> str:
 ### Open Questions for Phase 3
 
 1. **Which LLM to target?** Claude, GPT-4, local model?
-   - Recommendation: GPT-5.1 (already integrated)
+   - Recommendation: GPT-5.2-instant (already integrated)
 
 2. **Should the tool call the LLM directly?** Or just generate the prompt?
    - Recommendation: Generate prompt, let user paste (more control)
@@ -237,7 +239,7 @@ def build_wrapped_prompt(summary: dict) -> str:
 
 ## Phase 4: Visual UI (Flighty-Inspired)
 
-> **Status**: ❌ **NOT STARTED**
+> **Status**: 🚧 **IN PROGRESS** (React app wired; needs end-to-end validation + proxy hardening)
 
 ### Goal
 

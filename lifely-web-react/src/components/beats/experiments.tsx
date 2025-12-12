@@ -11,32 +11,49 @@ interface ExperimentsProps {
 
 export const Experiments = forwardRef<HTMLDivElement, ExperimentsProps>(
   ({ experiments, onStartOver, className }, ref) => {
+    const hasExperiments = experiments.length > 0;
+
     return (
       <section
         ref={ref}
-        className={cn("min-h-screen flex items-center justify-center px-4 py-16", className)}
+        className={cn("h-screen px-4 py-16", className)}
+        style={{
+          minWidth: '100vw',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          scrollSnapAlign: 'start',
+          flexShrink: 0,
+        }}
         aria-labelledby="experiments-heading"
       >
-        <div className="w-full max-w-lg">
+        <div style={{ width: '100%', maxWidth: '32rem' }}>
           {/* Header */}
           <div className="mb-8 reveal-up">
-            <h2 id="experiments-heading" className="text-2xl font-semibold text-text-primary mb-2">
+            <h2 id="experiments-heading" className="text-2xl font-semibold text-white mb-2">
               For 2026, consider:
             </h2>
           </div>
 
           {/* Experiments */}
-          <div className="bg-bg-card border border-border-default rounded-xl p-6 reveal-up">
-            <div className="space-y-6">
-              {experiments.map((experiment, index) => (
-                <ExperimentItem
-                  key={experiment.title}
-                  experiment={experiment}
-                  number={index + 1}
-                  delay={index * 100}
-                />
-              ))}
-            </div>
+          <div className="bg-gray-900 border border-white/10 rounded-xl p-6 reveal-up">
+            {hasExperiments ? (
+              <div className="space-y-6">
+                {experiments.map((experiment, index) => (
+                  <ExperimentItem
+                    key={experiment.title}
+                    experiment={experiment}
+                    number={index + 1}
+                    delay={index * 100}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-[15px] text-gray-500">
+                Experiments unavailable right now. Rerun when AI enrichment succeeds.
+              </p>
+            )}
           </div>
 
           {/* Start Over */}
@@ -49,7 +66,7 @@ export const Experiments = forwardRef<HTMLDivElement, ExperimentsProps>(
             >
               Start Over
             </Button>
-            <p className="text-center text-sm text-text-muted mt-3">
+            <p className="text-center text-sm text-gray-500 mt-3">
               This will clear your data and return to the beginning.
             </p>
           </div>
@@ -76,16 +93,16 @@ function ExperimentItem({
       style={{ animationDelay: `${delay}ms` }}
     >
       {/* Number badge */}
-      <div className="flex-none w-8 h-8 rounded-lg border border-accent-cyan text-accent-cyan flex items-center justify-center text-sm font-semibold">
+      <div className="flex-none w-8 h-8 rounded-lg border border-cyan-400 text-cyan-400 flex items-center justify-center text-sm font-semibold">
         {number}
       </div>
 
       {/* Content */}
       <div className="flex-1">
-        <p className="text-base text-text-primary font-semibold">
+        <p className="text-base text-white font-semibold">
           {experiment.title}
         </p>
-        <p className="text-[15px] text-text-secondary mt-1">
+        <p className="text-[15px] text-gray-400 mt-1">
           {experiment.description}
         </p>
       </div>

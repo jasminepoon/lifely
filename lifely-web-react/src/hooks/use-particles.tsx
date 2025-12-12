@@ -12,7 +12,7 @@ interface Particle {
 
 const COLORS = ['#00D4FF', '#00FF88', '#FF6B6B', '#FFD93D']
 
-export function useParticles(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
+function useParticles(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
   const particlesRef = useRef<Particle[]>([])
   const animationRef = useRef<number>(0)
 

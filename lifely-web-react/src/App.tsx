@@ -4,29 +4,25 @@ import { ResultsPage } from '@/components/results/results-page';
 
 type Route = 'landing' | 'results';
 
+function getRouteFromLocation(): Route {
+  const path = window.location.pathname;
+  const params = new URLSearchParams(window.location.search);
+  if (path === '/results' || path === '/results.html' || params.get('page') === 'results') {
+    return 'results';
+  }
+  return 'landing';
+}
+
 function App() {
-  const [route, setRoute] = useState<Route>('landing');
+  const [route, setRoute] = useState<Route>(() => {
+    if (typeof window === 'undefined') return 'landing';
+    return getRouteFromLocation();
+  });
 
   useEffect(() => {
-    // Simple URL-based routing
-    const path = window.location.pathname;
-    const params = new URLSearchParams(window.location.search);
-
-    if (path === '/results' || path === '/results.html' || params.get('page') === 'results') {
-      setRoute('results');
-    } else {
-      setRoute('landing');
-    }
-
     // Listen for popstate (back/forward)
     const handlePopState = () => {
-      const newPath = window.location.pathname;
-      const newParams = new URLSearchParams(window.location.search);
-      if (newPath === '/results' || newPath === '/results.html' || newParams.get('page') === 'results') {
-        setRoute('results');
-      } else {
-        setRoute('landing');
-      }
+      setRoute(getRouteFromLocation());
     };
 
     window.addEventListener('popstate', handlePopState);

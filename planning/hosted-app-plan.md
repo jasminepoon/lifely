@@ -67,7 +67,7 @@
 
 | Component | Choice | Rationale |
 |-----------|--------|-----------|
-| **Frontend** | Vite + vanilla JS | Fast, no framework overhead, matches spikes |
+| **Frontend** | Vite + React | Already implemented in `lifely-web-react/`; easy to iterate on beats |
 | **Hosting** | Cloudflare Pages | Free, fast, easy DNS for subdomain |
 | **OAuth** | Google Identity Services (PKCE) | Client-side only, no server token handling |
 | **LLM Proxy** | Cloudflare Worker | Edge, stateless, ~50 lines |
@@ -119,7 +119,7 @@ const client = google.accounts.oauth2.initTokenClient({
 
 ### 3. Calendar Fetch + Stats (Client-Side)
 
-Port the Python stats logic to JavaScript:
+Use the existing TypeScript stats pipeline from `lifely-web-react/src/lib/stats/` (already a port of the Python flow):
 
 ```javascript
 // Runs entirely in browser
@@ -141,12 +141,12 @@ async function processCalendar(accessToken) {
 }
 ```
 
-**Lines of JS to port**: ~300-400 (stats.py logic is straightforward)
+**Status**: Implemented in React app; needs production hardening (proxy + rate limits).
 
 ### 4. LLM Proxy (Cloudflare Worker)
 
 ```javascript
-// workers/llm-proxy.js (~60 lines)
+// workers/llm-proxy/src/index.ts (~100 lines)
 export default {
   async fetch(request, env) {
     // 1. Validate origin
@@ -167,27 +167,33 @@ export default {
     tokenData.uses_remaining--;
     await env.TOKENS.put(token, JSON.stringify(tokenData));
 
-    // 4. Proxy to OpenAI
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    // 4. Proxy to OpenAI (GPT-5 Responses API)
+    const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: model || 'gpt-5-mini',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2000,
+        model: model || 'gpt-5.2-instant',
+        input: prompt,
+        reasoning: { effort: 'low' },
+        text: { verbosity: 'low' },
+        max_output_tokens: 2000,
       }),
     });
 
-    // 5. Return response (client processes it)
+    // 5. Return response (client extracts from output[].content[].text)
     return new Response(openaiResponse.body, {
       headers: { 'Access-Control-Allow-Origin': origin },
     });
   }
 };
 ```
+
+**Rate limits**: Models are currently capped at ~3 RPM. The client should pack larger batches and keep request count low. The proxy should enforce per-token usage limits and return clear 429/401 errors (no silent failures).
+
+**Caching**: To preserve the “owner can’t see calendar data” constraint, caching is best done client-side (localStorage) rather than in the worker.
 
 ### 5. Token Management
 
@@ -218,26 +224,7 @@ For MVP: Just use `wrangler kv:key put` directly.
 
 ### 6. Results Rendering
 
-Reuse the spike components directly:
-- `hero.html` → Hero component
-- `people.html` → People cards
-- `places.html` → Stacked bars + chips
-- `rituals.html` → Activity bars
-- `narrative.html` → Typewriter story
-
-Convert to JS template functions:
-```javascript
-function renderHero(stats) {
-  return `
-    <section class="card hero">
-      <span class="label">2025 WRAPPED</span>
-      <h1 class="year">2025</h1>
-      <p class="tagline">Your year in ${stats.total_events} moments</p>
-      ...
-    </section>
-  `;
-}
-```
+Reuse the existing React beats (Hero, People, Places, Rituals, Patterns, Narrative, Experiments). The “storyboard” experience is already implemented with horizontal scroll + snap, progress dots, and screenshot-friendly cards.
 
 ---
 
@@ -256,28 +243,28 @@ function renderHero(stats) {
 ## File Structure
 
 ```
-lifely-web/
-├── index.html              # Landing page
-├── app.html                # Results page (or SPA)
-├── src/
-│   ├── main.js             # Entry point
-│   ├── auth.js             # Google OAuth PKCE
-│   ├── calendar.js         # Fetch + normalize events
-│   ├── stats.js            # Compute statistics (ported from Python)
-│   ├── llm.js              # Call LLM proxy
-│   ├── render.js           # Render components to DOM
-│   └── components/
-│       ├── hero.js
-│       ├── people.js
-│       ├── places.js
-│       ├── rituals.js
-│       └── narrative.js
-├── styles/
-│   └── base.css            # Copy from spikes, extend
+lifely/
+├── lifely-web-react/               # React frontend (active)
+│   ├── src/
+│   │   ├── lib/
+│   │   │   ├── google/             # GIS OAuth + Calendar fetch
+│   │   │   └── stats/              # TS stats + LLM pipeline
+│   │   ├── components/
+│   │   │   ├── landing/
+│   │   │   ├── results/
+│   │   │   └── beats/              # 7 beats
+│   │   └── hooks/
+│   └── .env.example
+│
 ├── workers/
-│   └── llm-proxy.js        # Cloudflare Worker
-└── wrangler.toml           # Cloudflare config
+│   └── llm-proxy/                  # Cloudflare Worker (OpenAI proxy)
+│       ├── src/index.ts
+│       └── wrangler.toml
+│
+└── planning/                       # Specs + roadmap
 ```
+
+`lifely-web/` (vanilla JS) is archived and not the v1 target.
 
 ---
 
@@ -315,10 +302,10 @@ lifely-web/
 - [ ] Run narrative/patterns/experiments via proxy
 
 ### Phase 6: Results UI (Day 3-4)
-- [ ] Convert spike HTML to JS render functions
-- [ ] Implement storyboard reveal sequence
-- [ ] Add loading states + progress
-- [ ] Polish animations
+- [ ] Reuse `lifely-web-react/` storyboard beats (Hero → People → Places → Rituals → Patterns → Narrative → Experiments)
+- [ ] Add token-gated entry + “Start over” behavior for hosted links
+- [ ] Ensure loading/progress UX matches landing-page-spec
+- [ ] Polish for screenshot shareability
 
 ### Phase 7: Token Admin (Day 4)
 - [ ] Simple CLI or script to create tokens
@@ -339,7 +326,7 @@ lifely-web/
 | Cloudflare Pages | Free |
 | Cloudflare Workers | Free (100k requests/day) |
 | Cloudflare KV | Free (100k reads/day) |
-| OpenAI (per friend) | ~$0.15-0.40 (5 calls × gpt-5-mini, up to 3 runs) |
+| OpenAI (per friend) | Variable (model: gpt-5.2-instant; request count must stay low due to 3 RPM) |
 | Domain | Already owned |
 
 **Total per friend**: ~$0.50 (assuming 3 runs max)

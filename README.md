@@ -123,18 +123,19 @@ lifely/
 | Phase | Focus | Status |
 |-------|-------|--------|
 | 1 | Calendar pipeline, friend stats | Done |
-| 2 | Location + LLM enrichment | **Current** |
-| 3 | Full stats and LLM prompt generation | Planned |
-| 4 | Visual UI (Flighty-inspired) | Planned |
+| 2 | Location + LLM enrichment | Done |
+| 3 | Narrative + insights | Done |
+| 4 | Visual UI (React) | In progress |
+| 5 | Hosted app (Cloudflare) | Planned |
 
 ### Phase 2 Prerequisites
 
 ```bash
 # OpenAI API (for --enrich)
 export OPENAI_API_KEY="sk-..."
-# Default models (can override; defaults to gpt-5.1)
-export LIFELY_LLM_LOCATION_MODEL="gpt-5.1"
-export LIFELY_LLM_CLASSIFICATION_MODEL="gpt-5.1"
+# Default models (can override; defaults to gpt-5.2-instant)
+export LIFELY_LLM_LOCATION_MODEL="gpt-5.2-instant"
+export LIFELY_LLM_CLASSIFICATION_MODEL="gpt-5.2-instant"
 
 # Google Places API (optional; resolves Maps links, can return lat/lng)
 export GOOGLE_MAPS_API_KEY="your_key_here"

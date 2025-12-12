@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Check } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 interface ModalProps {
   isOpen: boolean
@@ -34,30 +33,76 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
   // Render in portal to escape any stacking context issues
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem',
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-title"
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-md"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+        }}
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* Content */}
-      <div className="relative z-10 w-full max-w-md bg-bg-card border border-border-default rounded-xl p-6 shadow-elevated page-enter">
+      <div
+        className="page-enter"
+        style={{
+          position: 'relative',
+          zIndex: 10,
+          width: '100%',
+          maxWidth: '28rem',
+          backgroundColor: '#111827',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '0.75rem',
+          padding: '1.5rem',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+        }}
+      >
         <button
           ref={closeButtonRef}
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated transition-colors"
+          style={{
+            position: 'absolute',
+            top: '1rem',
+            right: '1rem',
+            padding: '0.375rem',
+            borderRadius: '0.375rem',
+            color: '#6b7280',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+          }}
           aria-label="Close"
         >
-          <X className="size-5" />
+          <X style={{ width: '1.25rem', height: '1.25rem' }} />
         </button>
 
-        <h2 id="modal-title" className="text-xl font-semibold text-text-primary mb-4 pr-8">
+        <h2
+          id="modal-title"
+          style={{
+            fontSize: '1.25rem',
+            fontWeight: 600,
+            color: 'white',
+            marginBottom: '1rem',
+            paddingRight: '2rem',
+          }}
+        >
           {title}
         </h2>
 
@@ -71,20 +116,38 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
 export function HowItWorksModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="How this works">
-      <ol className="space-y-4">
+      <ol style={{ display: 'flex', flexDirection: 'column', gap: '1rem', listStyle: 'none', margin: 0, padding: 0 }}>
         {[
           { title: 'You sign in with Google', detail: "We never see your password." },
           { title: 'Your calendar loads in your browser', detail: "The full calendar stays on your device." },
           { title: 'AI finds patterns in your year', detail: "Event titles and locations are sent to OpenAI to generate your story. We don't log or store any of this." },
           { title: "Close the tab and it's gone", detail: null },
         ].map((step, i) => (
-          <li key={i} className="flex gap-3">
-            <span className="flex-none size-6 rounded-full bg-accent-cyan/20 text-accent-cyan flex items-center justify-center text-sm font-medium">
+          <li key={i} style={{ display: 'flex', gap: '0.75rem' }}>
+            <span
+              style={{
+                flexShrink: 0,
+                width: '1.5rem',
+                height: '1.5rem',
+                borderRadius: '9999px',
+                backgroundColor: 'rgba(34, 211, 238, 0.2)',
+                color: '#22d3ee',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+              }}
+            >
               {i + 1}
             </span>
-            <div>
-              <p className="text-text-primary font-medium">{step.title}</p>
-              {step.detail && <p className="text-text-muted text-sm mt-0.5">{step.detail}</p>}
+            <div style={{ flex: 1 }}>
+              <p style={{ color: 'white', fontWeight: 500, margin: 0 }}>{step.title}</p>
+              {step.detail && (
+                <p style={{ color: '#6b7280', fontSize: '0.875rem', marginTop: '0.125rem', margin: 0 }}>
+                  {step.detail}
+                </p>
+              )}
             </div>
           </li>
         ))}
@@ -96,7 +159,7 @@ export function HowItWorksModal({ isOpen, onClose }: { isOpen: boolean; onClose:
 export function PermissionsModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Permissions we request">
-      <ul className="space-y-3">
+      <ul style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', listStyle: 'none', margin: 0, padding: 0 }}>
         <PermissionItem
           allowed
           name="View events on your calendars"
@@ -118,7 +181,15 @@ export function PermissionsModal({ isOpen, onClose }: { isOpen: boolean; onClose
           reason="Not requested."
         />
       </ul>
-      <p className="text-text-muted text-sm mt-4 pt-4 border-t border-border-default">
+      <p
+        style={{
+          color: '#6b7280',
+          fontSize: '0.875rem',
+          marginTop: '1rem',
+          paddingTop: '1rem',
+          borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+        }}
+      >
         We use the minimum permissions needed.
       </p>
     </Modal>
@@ -135,25 +206,36 @@ function PermissionItem({
   reason: string
 }) {
   return (
-    <li className="flex gap-3 items-start">
+    <li style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
       <span
-        className={cn(
-          "flex-none size-5 rounded-full flex items-center justify-center text-xs",
-          allowed
-            ? "bg-accent-cyan/20 text-accent-cyan"
-            : "bg-accent-warm/20 text-accent-warm"
-        )}
+        style={{
+          flexShrink: 0,
+          width: '1.25rem',
+          height: '1.25rem',
+          borderRadius: '9999px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '0.75rem',
+          backgroundColor: allowed ? 'rgba(34, 211, 238, 0.2)' : 'rgba(248, 113, 113, 0.2)',
+          color: allowed ? '#22d3ee' : '#f87171',
+        }}
       >
-        {allowed ? <Check className="size-3" /> : <X className="size-3" />}
+        {allowed ? <Check style={{ width: '0.75rem', height: '0.75rem' }} /> : <X style={{ width: '0.75rem', height: '0.75rem' }} />}
       </span>
-      <div>
-        <p className={cn(
-          "text-sm font-medium",
-          allowed ? "text-text-primary" : "text-text-muted line-through"
-        )}>
+      <div style={{ flex: 1 }}>
+        <p
+          style={{
+            fontSize: '0.875rem',
+            fontWeight: 500,
+            color: allowed ? 'white' : '#6b7280',
+            textDecoration: allowed ? 'none' : 'line-through',
+            margin: 0,
+          }}
+        >
           {name}
         </p>
-        <p className="text-text-muted text-xs">{reason}</p>
+        <p style={{ color: '#6b7280', fontSize: '0.75rem', margin: 0 }}>{reason}</p>
       </div>
     </li>
   )
