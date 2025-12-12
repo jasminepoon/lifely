@@ -68,6 +68,11 @@ export async function processCalendarEvents(
   const events = filterEventsByYear(allEvents, year);
   const hasLlm = !!llmConfig?.apiKey || !!llmConfig?.proxyUrl;
   const llmWarnings: string[] = [];
+  const pushWarning = (warning: string) => {
+    const trimmed = warning?.trim();
+    if (!trimmed) return;
+    if (!llmWarnings.includes(trimmed)) llmWarnings.push(trimmed);
+  };
 
   // Phase 2: Compute basic stats (no LLM)
   onProgress?.({
@@ -130,7 +135,8 @@ export async function processCalendarEvents(
           percent,
           message: `Analyzing locations (${current}/${total})...`,
         });
-      }
+      },
+      pushWarning
     );
   } catch (error) {
     console.error('Location enrichment failed:', error);
@@ -167,7 +173,8 @@ export async function processCalendarEvents(
           percent,
           message: `Classifying events (${current}/${total})...`,
         });
-      }
+      },
+      pushWarning
     );
   } catch (error) {
     console.error('Event classification failed:', error);
@@ -200,7 +207,8 @@ export async function processCalendarEvents(
       locationStats,
       activityStats,
       year,
-      llmConfig!
+      llmConfig!,
+      pushWarning
     );
     narrative = insights.narrative;
     patterns = insights.patterns;

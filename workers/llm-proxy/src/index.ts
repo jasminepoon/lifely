@@ -13,6 +13,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 
 const ALLOWED_MODELS = new Set(['gpt-5.2', 'gpt-5-mini', 'gpt-5-nano']);
+const GPT52_EFFORTS = new Set(['none', 'low', 'medium', 'high', 'xhigh']);
+const MINI_EFFORTS = new Set(['minimal', 'low', 'medium', 'high']);
 
 function parseAllowedOrigins(envValue: string | undefined): string[] {
   if (!envValue) return DEFAULT_ALLOWED_ORIGINS;
@@ -40,6 +42,23 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(n)));
+}
+
+function normalizeReasoningEffort(model: string, effortRaw: unknown): string {
+  const isMiniOrNano = model.includes('mini') || model.includes('nano');
+  if (typeof effortRaw !== 'string') {
+    return isMiniOrNano ? 'minimal' : 'low';
+  }
+
+  if (isMiniOrNano) {
+    if (effortRaw === 'none') return 'minimal';
+    if (effortRaw === 'xhigh') return 'high';
+    return MINI_EFFORTS.has(effortRaw) ? effortRaw : 'low';
+  }
+
+  // gpt-5.2 supports: none | low | medium | high | xhigh (not minimal)
+  if (effortRaw === 'minimal') return 'low';
+  return GPT52_EFFORTS.has(effortRaw) ? effortRaw : 'low';
 }
 
 function corsHeaders(origin: string | null, allowedOrigins: string[]): Headers {
@@ -103,12 +122,7 @@ export default {
     }
 
     const effortRaw = body?.reasoning?.effort;
-    const effort =
-      model.includes('mini') && effortRaw === 'none'
-        ? 'minimal'
-        : typeof effortRaw === 'string'
-          ? effortRaw
-          : 'low';
+    const effort = normalizeReasoningEffort(model, effortRaw);
     const verbosityRaw = body?.text?.verbosity;
     const verbosity = typeof verbosityRaw === 'string' ? verbosityRaw : 'low';
 

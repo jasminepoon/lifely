@@ -267,10 +267,17 @@ Many Tailwind v4 utility classes silently fail (flex, grid, gap, w-full, max-w-*
 **Reference**: See `lifely-web-react/TAILWIND_V4_LEARNINGS.md` for detailed list
 
 ### Reasoning Effort Compatibility
-Some GPT-5 variants (notably `gpt-5-mini`/`gpt-5-nano`) do not support `reasoning.effort: "none"`.
+GPT-5 family models differ in supported `reasoning.effort` values:
+- `gpt-5.2`: `none | low | medium | high | xhigh` (does **not** support `minimal`)
+- `gpt-5-mini` / `gpt-5-nano`: `minimal | low | medium | high` (does **not** support `none`)
 
-**Solution**: Use `reasoningEffort: "low"` across the board for compatibility.
-**Status**: Fixed in `lifely-web-react/src/lib/stats/llm.ts`
+**Solution**: Normalize effort per model:
+- `none → minimal` on `gpt-5-mini` / `gpt-5-nano`
+- `minimal → low` on `gpt-5.2`
+
+**Status**: Implemented in:
+- `lifely-web-react/src/lib/stats/llm.ts`
+- `workers/llm-proxy/src/index.ts`
 
 ### OpenAI Rate Limits (3 RPM)
 These models have extremely low request-per-minute limits (3 RPM). That makes “many small requests” brittle.
@@ -291,7 +298,7 @@ OpenAI calls currently run client-side; keys are exposed in the browser.
 ### Missing AI Sections When LLM Fails
 When LLM calls fail (rate limits, timeouts), AI-driven sections can be empty.
 
-**Solution**: Beats render with explicit fallback UI and a warning banner (instead of disappearing and breaking navigation).
+**Solution**: Beats render with explicit fallback UI and a warning banner (instead of disappearing and breaking navigation). Non-fatal batch failures are surfaced via `llm_warnings` so debugging isn’t “silent”.
 
 ### LLM Processing Time
 LLM enrichment time is dominated by RPM limits and the number of unique locations/summaries.
@@ -310,6 +317,7 @@ LLM enrichment time is dominated by RPM limits and the number of unique location
 - **Local cache**: location + classification cached in localStorage to make reruns fast and reliable
 - **Fewer calls**: narrative + patterns + experiments generated in a single request
 - **UI resilience**: beats render with explicit fallbacks when AI data is missing
+- **Hardening**: request timeouts + detection of incomplete/empty Responses API outputs; avoid poisoning cache on invalid JSON
 
 ### 2025-12-12 - Loading UX + Navigation Fixes
 - **New ProcessingView component**: Premium loading experience during LLM enrichment
@@ -333,9 +341,9 @@ LLM enrichment time is dominated by RPM limits and the number of unique location
   - Response: nested structure `output[].content[].text` (where `type === 'message'` and content `type === 'output_text'`)
 - **Updated models to GPT-5 family**: Initial migration used `gpt-5-mini` defaults (later moved to `gpt-5.2`; see 2025-12-12)
 - **New API parameters**: Replaced `temperature` with GPT-5 parameters
-  - `reasoning.effort`: 'minimal' | 'low' | 'medium' | 'high' (controls chain-of-thought depth; `'none'` not supported by gpt-5-mini)
+  - `reasoning.effort`: model-dependent (see “Reasoning Effort Compatibility” above)
   - `text.verbosity`: 'low' | 'medium' | 'high' (controls output length)
-  - All calls use `reasoningEffort: 'low'` for consistent, fast responses
+  - Current default: `reasoningEffort: 'none'` (normalized per model; mini/nano → `minimal`)
 
 ### 2025-12-11 - Dynamic categories & coverage stats
 - **Dynamic LLM classification**: Prompt now asks LLM to assign any meaningful category name + `is_interesting` flag

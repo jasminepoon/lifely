@@ -197,13 +197,17 @@ type ErrorWithStatus = Error & { status?: number };
 
 type CallOptions = {
   maxTokens?: number;
-  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
+  reasoningEffort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   verbosity?: 'low' | 'medium' | 'high';
   retries?: number;
+  timeoutMs?: number;
 };
 
 // Response type for GPT-5 Responses API
 interface ResponsesAPIResponse {
+  status?: 'completed' | 'incomplete' | 'failed' | string;
+  incomplete_details?: { reason?: string } | null;
+  error?: { message?: string; code?: string; type?: string; param?: string } | null;
   output: Array<{
     type: 'reasoning' | 'message';
     content?: Array<{
@@ -218,9 +222,37 @@ interface ResponsesAPIResponse {
  * The response structure is: output[].content[].text where type='message'
  */
 function extractResponseText(data: ResponsesAPIResponse): string {
-  const messageOutput = data.output?.find(o => o.type === 'message');
-  const textContent = messageOutput?.content?.find(c => c.type === 'output_text');
-  return textContent?.text || '';
+  const outputs = data.output || [];
+  const texts: string[] = [];
+
+  for (const output of outputs) {
+    if (output.type !== 'message') continue;
+    const content = output.content || [];
+    for (const c of content) {
+      if (c.type === 'output_text' && typeof c.text === 'string') {
+        texts.push(c.text);
+      }
+    }
+  }
+
+  return texts.join('\n');
+}
+
+function normalizeReasoningEffort(
+  model: string,
+  effort: NonNullable<CallOptions['reasoningEffort']>
+): 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' {
+  const isMiniOrNano = model.includes('mini') || model.includes('nano');
+
+  if (isMiniOrNano) {
+    if (effort === 'none') return 'minimal';
+    if (effort === 'xhigh') return 'high';
+    return effort;
+  }
+
+  // gpt-5.2 supports: none | low | medium | high | xhigh (not minimal)
+  if (effort === 'minimal') return 'low';
+  return effort;
 }
 
 async function throttleRpm() {
@@ -278,32 +310,105 @@ async function callOpenAI(
   // Convert messages to single input string for Responses API
   const input = messages.map(m => m.content).join('\n\n');
 
-  // Some models (e.g., gpt-5-mini) don't support 'none'; normalize to 'low' in that case.
-  const requestedEffort = options.reasoningEffort ?? 'low';
-  const normalizedEffort =
-    model.includes('mini') && requestedEffort === 'none'
-      ? 'low'
-      : requestedEffort;
+  const timeoutMs = options.timeoutMs ?? 120_000;
 
-  const body = {
+  // Normalize reasoning effort across models:
+  // - gpt-5.2 supports `none` but NOT `minimal`
+  // - gpt-5-mini/nano support `minimal` but NOT `none`
+  const requestedEffort = options.reasoningEffort ?? 'none';
+  const normalizedEffort = normalizeReasoningEffort(model, requestedEffort);
+
+  let maxOutputTokens = options.maxTokens ?? 1600;
+
+  const buildBody = () => ({
     model,
     input,
     reasoning: { effort: normalizedEffort },
     text: { verbosity: options.verbosity ?? 'low' },
-    max_output_tokens: options.maxTokens ?? 1600,
-  };
+    max_output_tokens: maxOutputTokens,
+  });
 
   const execute = async () => {
     // Enforce RPM throttle before any outbound request
     await throttleRpm();
 
+    const body = buildBody();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
     // Prefer proxy so keys stay server-side
-    if (config.proxyUrl) {
-      const response = await fetch(config.proxyUrl, {
+    try {
+      if (config.proxyUrl) {
+        const response = await fetch(config.proxyUrl, {
+          method: 'POST',
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(config.proxyToken ? { Authorization: `Bearer ${config.proxyToken}` } : {}),
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const error = await response.text();
+          const err: ErrorWithStatus = new Error(
+            `LLM proxy error: ${response.status} - ${error}`
+          );
+          err.status = response.status;
+          throw err;
+        }
+
+        const data: ResponsesAPIResponse = await response.json();
+        if (data.error) {
+          const err: ErrorWithStatus = new Error(
+            `LLM proxy OpenAI error: ${data.error.message || 'unknown error'}`
+          );
+          err.status = 502;
+          throw err;
+        }
+
+        if (data.status && data.status !== 'completed') {
+          const reason = data.incomplete_details?.reason || data.status;
+          // If we hit output token limits, bump once and retry (handled by outer retry loop).
+          if (data.status === 'incomplete' && reason === 'max_output_tokens') {
+            maxOutputTokens = Math.min(
+              2400,
+              Math.max(maxOutputTokens + 600, Math.round(maxOutputTokens * 1.5))
+            );
+            const err: ErrorWithStatus = new Error(
+              `LLM proxy returned incomplete response (${reason}). Retrying with higher max_output_tokens.`
+            );
+            err.status = 503;
+            throw err;
+          }
+
+          const err: ErrorWithStatus = new Error(
+            `LLM proxy returned ${data.status} response (${reason}).`
+          );
+          err.status = 503;
+          throw err;
+        }
+
+        const text = extractResponseText(data).trim();
+        if (!text) {
+          const err: ErrorWithStatus = new Error('LLM proxy returned empty response text.');
+          err.status = 503;
+          throw err;
+        }
+        return text;
+      }
+
+      // Fallback: direct call (dev only; exposes key in browser)
+      if (!config.apiKey) {
+        throw new Error('No LLM credentials configured');
+      }
+
+      const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
-          ...(config.proxyToken ? { Authorization: `Bearer ${config.proxyToken}` } : {}),
+          Authorization: `Bearer ${config.apiKey}`,
         },
         body: JSON.stringify(body),
       });
@@ -311,41 +416,59 @@ async function callOpenAI(
       if (!response.ok) {
         const error = await response.text();
         const err: ErrorWithStatus = new Error(
-          `LLM proxy error: ${response.status} - ${error}`
+          `OpenAI API error: ${response.status} - ${error}`
         );
         err.status = response.status;
         throw err;
       }
 
       const data: ResponsesAPIResponse = await response.json();
-      return extractResponseText(data);
-    }
+      if (data.error) {
+        const err: ErrorWithStatus = new Error(
+          `OpenAI API error: ${data.error.message || 'unknown error'}`
+        );
+        err.status = 400;
+        throw err;
+      }
 
-    // Fallback: direct call (dev only; exposes key in browser)
-    if (!config.apiKey) {
-      throw new Error('No LLM credentials configured');
-    }
+      if (data.status && data.status !== 'completed') {
+        const reason = data.incomplete_details?.reason || data.status;
+        if (data.status === 'incomplete' && reason === 'max_output_tokens') {
+          maxOutputTokens = Math.min(
+            2400,
+            Math.max(maxOutputTokens + 600, Math.round(maxOutputTokens * 1.5))
+          );
+          const err: ErrorWithStatus = new Error(
+            `OpenAI returned incomplete response (${reason}). Retrying with higher max_output_tokens.`
+          );
+          err.status = 503;
+          throw err;
+        }
 
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
+        const err: ErrorWithStatus = new Error(`OpenAI returned ${data.status} response (${reason}).`);
+        err.status = 503;
+        throw err;
+      }
 
-    if (!response.ok) {
-      const error = await response.text();
-      const err: ErrorWithStatus = new Error(
-        `OpenAI API error: ${response.status} - ${error}`
-      );
-      err.status = response.status;
+      const text = extractResponseText(data).trim();
+      if (!text) {
+        const err: ErrorWithStatus = new Error('OpenAI returned empty response text.');
+        err.status = 503;
+        throw err;
+      }
+      return text;
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        const timeoutErr: ErrorWithStatus = new Error(
+          `LLM request timed out after ${Math.round(timeoutMs / 1000)}s`
+        );
+        timeoutErr.status = 503;
+        throw timeoutErr;
+      }
       throw err;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const data: ResponsesAPIResponse = await response.json();
-    return extractResponseText(data);
   };
 
   // Simple retry/backoff for rate limits (429) or 503s
@@ -422,7 +545,10 @@ async function callWithFallback(
 /**
  * Parse JSON from LLM response (handles markdown code blocks).
  */
-function parseJsonResponse<T>(content: string, defaultValue: T): T {
+function parseJsonResponse<T>(
+  content: string,
+  defaultValue: T
+): { ok: boolean; data: T } {
   let jsonStr = content;
 
   // Extract from markdown code blocks
@@ -432,11 +558,26 @@ function parseJsonResponse<T>(content: string, defaultValue: T): T {
     jsonStr = content.split('```')[1]?.split('```')[0]?.trim() || '';
   }
 
-  try {
-    return JSON.parse(jsonStr);
-  } catch {
-    return defaultValue;
+  const candidates: string[] = [];
+  if (jsonStr.trim()) candidates.push(jsonStr.trim());
+
+  // Try to salvage by extracting the first JSON object in the string
+  const start = jsonStr.indexOf('{');
+  const end = jsonStr.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    candidates.push(jsonStr.slice(start, end + 1).trim());
   }
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      return { ok: true, data: JSON.parse(candidate) as T };
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return { ok: false, data: defaultValue };
 }
 
 /**
@@ -486,10 +627,12 @@ interface LocationEnrichmentResult {
 export async function enrichAllEvents(
   events: NormalizedEvent[],
   llmConfig: LlmConfig,
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
+  onWarning?: (warning: string) => void
 ): Promise<Map<string, LocationEnrichment>> {
   const enrichmentLookup = new Map<string, LocationEnrichment>();
   const cache = loadLlmCache();
+  let warned = false;
 
   // Deduplicate by location to reduce tokens and cache hits.
   const locationKeyToEventIds = new Map<string, string[]>();
@@ -574,13 +717,24 @@ export async function enrichAllEvents(
             MODEL_FALLBACK_CHAIN,
             llmConfig,
             [{ role: 'user', content: prompt }],
-            { maxTokens: 1400, reasoningEffort: 'low', retries: 2 }
+            { maxTokens: 1400, reasoningEffort: 'none', retries: 2 }
           );
 
-          const data = parseJsonResponse<{ results: LocationEnrichmentResult[] }>(
+          const parsed = parseJsonResponse<{ results: LocationEnrichmentResult[] }>(
             content,
             { results: [] }
           );
+          if (!parsed.ok) {
+            const msg =
+              'Location enrichment returned invalid JSON. Please retry AI enrichment.';
+            if (!warned) {
+              warned = true;
+              onWarning?.(msg);
+            }
+            console.error(msg);
+            return;
+          }
+          const data = parsed.data;
 
           const returnedKeys = new Set<string>();
 
@@ -641,6 +795,14 @@ export async function enrichAllEvents(
               'OpenAI rate limit reached during location enrichment. Please retry in a minute.'
             );
           }
+          if (!warned) {
+            warned = true;
+            onWarning?.(
+              error instanceof Error
+                ? `Location enrichment batch failed: ${error.message}`
+                : 'Location enrichment batch failed (unknown error)'
+            );
+          }
           console.error('Location enrichment batch failed:', error);
         }
       },
@@ -680,9 +842,11 @@ export async function classifyEvents(
   events: NormalizedEvent[],
   enrichmentLookup: Map<string, LocationEnrichment> | null,
   llmConfig: LlmConfig,
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
+  onWarning?: (warning: string) => void
 ): Promise<[InferredFriend[], Record<string, ActivityCategoryStats>]> {
   const cache = loadLlmCache();
+  let warned = false;
 
   const summaryToEvents = new Map<
     string,
@@ -798,13 +962,23 @@ export async function classifyEvents(
               MODEL_FALLBACK_CHAIN,
               llmConfig,
               [{ role: 'user', content: prompt }],
-              { maxTokens: 2400, reasoningEffort: 'low', retries: 2 }
+              { maxTokens: 2400, reasoningEffort: 'none', retries: 2 }
             );
 
-            const data = parseJsonResponse<{ results: ClassificationResult[] }>(
+            const parsed = parseJsonResponse<{ results: ClassificationResult[] }>(
               content,
               { results: [] }
             );
+            if (!parsed.ok) {
+              const msg = 'Classification returned invalid JSON. Please retry AI enrichment.';
+              if (!warned) {
+                warned = true;
+                onWarning?.(msg);
+              }
+              console.error(msg);
+              return;
+            }
+            const data = parsed.data;
 
             const returnedSummaries = new Set<string>();
 
@@ -857,6 +1031,14 @@ export async function classifyEvents(
             if (isRateLimitError(error)) {
               throw new Error(
                 'OpenAI rate limit reached during classification. Please retry in a minute.'
+              );
+            }
+            if (!warned) {
+              warned = true;
+              onWarning?.(
+                error instanceof Error
+                  ? `Classification batch failed: ${error.message}`
+                  : 'Classification batch failed (unknown error)'
               );
             }
             console.error('Classification batch failed:', error);
@@ -1198,7 +1380,8 @@ export async function generateStoryAndInsights(
   locationStats: LocationStats,
   activityStats: Record<string, ActivityCategoryStats>,
   year: number,
-  llmConfig: LlmConfig
+  llmConfig: LlmConfig,
+  onWarning?: (warning: string) => void
 ): Promise<{
   narrative: NarrativeOutput | null;
   patterns: Insight[];
@@ -1228,10 +1411,10 @@ export async function generateStoryAndInsights(
       MODEL_FALLBACK_CHAIN,
       llmConfig,
       [{ role: 'user', content: wrappedPrompt }],
-      { maxTokens: 1200, reasoningEffort: 'low', verbosity: 'medium', retries: 2 }
+      { maxTokens: 1200, reasoningEffort: 'none', verbosity: 'low', retries: 2 }
     );
 
-    const data = parseJsonResponse<{
+    const parsed = parseJsonResponse<{
       narrative?: string;
       patterns?: Array<{ title: string; detail: string }>;
       experiments?: Array<{ title: string; description: string }>;
@@ -1239,6 +1422,13 @@ export async function generateStoryAndInsights(
       content,
       { narrative: '', patterns: [], experiments: [] }
     );
+    if (!parsed.ok) {
+      const msg = 'Narrative/insights returned invalid JSON. Please retry AI enrichment.';
+      onWarning?.(msg);
+      console.error(msg);
+      return { narrative, patterns, experiments };
+    }
+    const data = parsed.data;
 
     if (data.narrative && data.narrative.trim()) {
       narrative = { story: data.narrative.trim() };
@@ -1257,6 +1447,11 @@ export async function generateStoryAndInsights(
         'OpenAI rate limit reached while generating narrative. Please retry in a minute.'
       );
     }
+    onWarning?.(
+      error instanceof Error
+        ? `Narrative/insights generation failed: ${error.message}`
+        : 'Narrative/insights generation failed (unknown error)'
+    );
     console.error('Narrative/insights generation failed:', error);
   }
 
